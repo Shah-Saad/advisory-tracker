@@ -1,0 +1,397 @@
+const Sheet = require('../models/Sheet');
+const Team = require('../models/Team');
+const TeamSheet = require('../models/TeamSheet');
+const SheetResponse = require('../models/SheetResponse');
+const FileProcessingService = require('./FileProcessingService');
+
+class SheetService {
+  static async getAllSheets() {
+    return await Sheet.findAll();
+  }
+
+  static async getSheetById(id) {
+    const sheet = await Sheet.findById(id);
+    if (!sheet) {
+      throw new Error('Sheet not found');
+    }
+    return sheet;
+  }
+
+  static async getSheetWithAssignments(id) {
+    const assignments = await Sheet.findWithAssignments(id);
+    if (!assignments || assignments.length === 0) {
+      throw new Error('Sheet not found');
+    }
+    return assignments;
+  }
+
+  static async createMonthlySheet(sheetData, createdBy, fileInfo = null) {
+    const { title, description, month_year } = sheetData;
+
+    // Validate month_year format (YYYY-MM-DD or YYYY-MM)
+    const monthYearDate = new Date(month_year);
+    if (isNaN(monthYearDate.getTime())) {
+      throw new Error('Invalid month_year format. Use YYYY-MM-DD or YYYY-MM');
+    }
+
+    // Check if sheet for this month already exists
+    const existingSheets = await Sheet.getAll(1, 100, { 
+      month_year: month_year.length === 7 ? `${month_year}-01` : month_year 
+    });
+    
+    if (existingSheets.data.length > 0) {
+      throw new Error(`Sheet for ${month_year} already exists`);
+    }
+
+    let processedFileData = null;
+    let templateFields = [];
+
+    // Process uploaded file if provided
+    if (fileInfo) {
+      try {
+        processedFileData = await FileProcessingService.processSheetFile(
+          fileInfo.path, 
+          fileInfo.extension
+        );
+
+        // Validate file structure
+        const validation = FileProcessingService.validateSheetStructure(processedFileData);
+        if (!validation.isValid) {
+          throw new Error(`File validation failed: ${validation.errors.join(', ')}`);
+        }
+
+        templateFields = processedFileData.templateFields;
+      } catch (error) {
+        throw new Error(`File processing failed: ${error.message}`);
+      }
+    } else {
+      // Use default template fields if no file uploaded
+      templateFields = [
+        { name: 'product_name', label: 'Product Name', type: 'text', required: true },
+        { name: 'location', label: 'Location', type: 'text', required: true },
+        { name: 'deployed_in_ke', label: 'Deployed in KE?', type: 'select', options: ['Yes', 'No'], required: true },
+        { name: 'installation_date', label: 'Installation Date', type: 'date', required: false },
+        { name: 'status', label: 'Status', type: 'select', options: ['Active', 'Inactive', 'Pending'], required: true },
+        { name: 'cost', label: 'Cost', type: 'number', required: false },
+        { name: 'vendor', label: 'Vendor', type: 'text', required: false },
+        { name: 'notes', label: 'Notes', type: 'textarea', required: false }
+      ];
+    }
+
+    const sheetRecord = await Sheet.create({
+      title,
+      description,
+      file_name: fileInfo ? fileInfo.originalName : null,
+      file_path: fileInfo ? fileInfo.path : null,
+      file_type: fileInfo ? fileInfo.extension.replace('.', '') : null,
+      month_year: month_year.length === 7 ? `${month_year}-01` : month_year,
+      uploaded_by: createdBy,
+      status: 'draft'
+    });
+
+    // Save individual entries to database if file was processed
+    let savedEntries = null;
+    if (processedFileData && processedFileData.rows.length > 0) {
+      try {
+        const SheetEntryService = require('./SheetEntryService');
+        savedEntries = await SheetEntryService.saveSheetEntries(sheetRecord.id, processedFileData);
+        console.log(`✅ Saved ${savedEntries.count} entries to database for sheet ${sheetRecord.id}`);
+      } catch (entryError) {
+        console.error('Error saving entries to database:', entryError.message);
+        // Don't fail the whole operation if entry saving fails
+      }
+    }
+
+    return {
+      sheet: sheetRecord,
+      fileData: processedFileData,
+      templateFields: templateFields,
+      savedEntries: savedEntries
+    };
+  }
+
+  static async updateSheet(id, sheetData) {
+    const existingSheet = await Sheet.findById(id);
+    if (!existingSheet) {
+      throw new Error('Sheet not found');
+    }
+
+    // Don't allow updating if sheet is already distributed
+    if (existingSheet.status === 'distributed') {
+      throw new Error('Cannot update sheet that has been distributed');
+    }
+
+    if (sheetData.template_fields) {
+      sheetData.template_fields = JSON.stringify(sheetData.template_fields);
+    }
+
+    return await Sheet.update(id, sheetData);
+  }
+
+  static async distributeSheetToTeams(sheetId, teamIds, distributedBy) {
+    const sheet = await Sheet.findById(sheetId);
+    if (!sheet) {
+      throw new Error('Sheet not found');
+    }
+
+    if (sheet.status === 'distributed') {
+      throw new Error('Sheet has already been distributed');
+    }
+
+    // Verify all teams exist
+    for (const teamId of teamIds) {
+      const team = await Team.findById(teamId);
+      if (!team) {
+        throw new Error(`Team with ID ${teamId} not found`);
+      }
+    }
+
+    // Assign sheet to each team
+    const assignments = [];
+    for (const teamId of teamIds) {
+      try {
+        const assignment = await TeamSheet.assignSheetToTeam(sheetId, teamId, distributedBy);
+        assignments.push(assignment);
+      } catch (error) {
+        // Continue if already assigned
+        if (!error.message.includes('already assigned')) {
+          throw error;
+        }
+      }
+    }
+
+    // Update sheet status to distributed
+    await Sheet.update(sheetId, { 
+      status: 'distributed',
+      distributed_at: new Date(),
+      distributed_by: distributedBy 
+    });
+
+    return assignments;
+  }
+
+  static async distributeToAllTeams(sheetId, distributedBy) {
+    const activeTeams = await Team.findActiveTeams();
+    const teamIds = activeTeams.map(team => team.id);
+    
+    return await this.distributeSheetToTeams(sheetId, teamIds, distributedBy);
+  }
+
+  static async getTeamSheets(teamId, status = null) {
+    let assignments = await TeamSheet.getTeamSheetProgress(teamId);
+    
+    if (status) {
+      assignments = assignments.filter(assignment => assignment.assignment_status === status);
+    }
+    
+    return assignments;
+  }
+
+  static async startTeamSheet(sheetId, teamId, userId) {
+    const assignment = await TeamSheet.findTeamAssignment(sheetId, teamId);
+    if (!assignment) {
+      throw new Error('Sheet not assigned to this team');
+    }
+
+    if (assignment.status !== 'assigned') {
+      throw new Error('Sheet is not in assigned status');
+    }
+
+    return await TeamSheet.updateAssignmentStatus(sheetId, teamId, 'in_progress', userId);
+  }
+
+  static async submitTeamSheet(sheetId, teamId, responses, userId) {
+    const assignment = await TeamSheet.findTeamAssignment(sheetId, teamId);
+    if (!assignment) {
+      throw new Error('Sheet not assigned to this team');
+    }
+
+    // Save responses
+    await SheetResponse.saveTeamResponse(sheetId, teamId, responses, userId);
+
+    // Update assignment status to completed
+    await TeamSheet.updateAssignmentStatus(sheetId, teamId, 'completed', userId);
+
+    return { message: 'Sheet submitted successfully' };
+  }
+
+  static async getSheetResponses(sheetId) {
+    const sheet = await Sheet.findById(sheetId);
+    if (!sheet) {
+      throw new Error('Sheet not found');
+    }
+
+    return await SheetResponse.getSheetResponsesSummary(sheetId);
+  }
+
+  static async exportSheetData(sheetId) {
+    const sheet = await Sheet.findById(sheetId);
+    if (!sheet) {
+      throw new Error('Sheet not found');
+    }
+
+    return await SheetResponse.exportSheetData(sheetId);
+  }
+
+  static async getCurrentMonthSheets() {
+    return await Sheet.getCurrentMonthSheets();
+  }
+
+  static async getSheetsByStatus(status) {
+    return await Sheet.getSheetsByStatus(status);
+  }
+
+  static async deleteSheet(id) {
+    const existingSheet = await Sheet.findById(id);
+    if (!existingSheet) {
+      throw new Error('Sheet not found');
+    }
+
+    // Don't allow deleting if sheet has been distributed
+    if (existingSheet.status === 'distributed') {
+      throw new Error('Cannot delete sheet that has been distributed');
+    }
+
+    return await Sheet.delete(id);
+  }
+
+  static async getTeamSheetDetails(sheetId, teamId) {
+    const sheet = await Sheet.findByTeamAndMonth(teamId, null, null); // Will need to adjust this
+    if (!sheet) {
+      throw new Error('Sheet not found for this team');
+    }
+
+    const responses = await SheetResponse.findByTeamSheet(sheetId, teamId);
+    
+    return {
+      sheet,
+      responses
+    };
+  }
+
+  // Get all sheets with pagination and filters
+  static async getAllSheetsWithFilters(page = 1, limit = 10, filters = {}) {
+    try {
+      return await Sheet.getAll(page, limit, filters);
+    } catch (error) {
+      throw new Error(`Failed to get sheets: ${error.message}`);
+    }
+  }
+
+  // Get filtered sheet responses for admin analysis
+  static async getFilteredSheetData(sheetId, filters = {}) {
+    try {
+      const sheet = await Sheet.findById(sheetId);
+      if (!sheet) {
+        throw new Error('Sheet not found');
+      }
+
+      const responses = await Sheet.getSheetResponsesWithFilters(sheetId, filters);
+      
+      // Add summary statistics
+      const summary = {
+        total_responses: responses.length,
+        teams_responded: [...new Set(responses.map(r => r.team_name))].length,
+        deployed_in_ke_yes: responses.filter(r => 
+          r.response_data && r.response_data.deployed_in_ke === 'Yes'
+        ).length,
+        deployed_in_ke_no: responses.filter(r => 
+          r.response_data && r.response_data.deployed_in_ke === 'No'
+        ).length
+      };
+
+      return {
+        sheet,
+        responses,
+        summary,
+        filters_applied: filters
+      };
+    } catch (error) {
+      throw new Error(`Failed to get filtered sheet data: ${error.message}`);
+    }
+  }
+
+  // Get monthly sheet summary for admin dashboard
+  static async getMonthlySheetSummary(year, month) {
+    try {
+      const sheets = await Sheet.getAll(1, 100, { year, month });
+      
+      const summary = {
+        total_sheets: sheets.data.length,
+        completed_sheets: sheets.data.filter(s => s.status === 'completed').length,
+        in_progress_sheets: sheets.data.filter(s => s.status === 'in_progress').length,
+        distributed_sheets: sheets.data.filter(s => s.status === 'distributed').length
+      };
+
+      return {
+        year,
+        month,
+        sheets: sheets.data,
+        summary
+      };
+    } catch (error) {
+      throw new Error(`Failed to get monthly summary: ${error.message}`);
+    }
+  }
+
+  // Export sheet data with applied filters
+  static async exportSheetData(sheetId, filters = {}, format = 'json') {
+    try {
+      const data = await this.getFilteredSheetData(sheetId, filters);
+      
+      if (format === 'csv') {
+        // Convert to CSV format
+        const csv = this.convertToCSV(data.responses);
+        return {
+          data: csv,
+          filename: `sheet_${sheetId}_export_${new Date().toISOString().split('T')[0]}.csv`,
+          contentType: 'text/csv'
+        };
+      }
+      
+      return {
+        data: data,
+        filename: `sheet_${sheetId}_export_${new Date().toISOString().split('T')[0]}.json`,
+        contentType: 'application/json'
+      };
+    } catch (error) {
+      throw new Error(`Failed to export sheet data: ${error.message}`);
+    }
+  }
+
+  // Helper method to convert data to CSV
+  static convertToCSV(responses) {
+    if (!responses.length) return '';
+    
+    // Get all possible keys from response_data
+    const allKeys = new Set();
+    responses.forEach(response => {
+      if (response.response_data) {
+        Object.keys(response.response_data).forEach(key => allKeys.add(key));
+      }
+    });
+    
+    const headers = ['team_name', 'username', 'submitted_at', ...Array.from(allKeys)];
+    
+    const rows = responses.map(response => {
+      const row = {
+        team_name: response.team_name,
+        username: response.username,
+        submitted_at: response.submitted_at
+      };
+      
+      // Add response data fields
+      if (response.response_data) {
+        allKeys.forEach(key => {
+          row[key] = response.response_data[key] || '';
+        });
+      }
+      
+      return headers.map(header => `"${(row[header] || '').toString().replace(/"/g, '""')}"`).join(',');
+    });
+    
+    return [headers.join(','), ...rows].join('\n');
+  }
+}
+
+module.exports = SheetService;

@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Advisory Tracker - Personal Sheet Upload</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        .container { background: #f9f9f9; padding: 30px; border-radius: 10px; margin: 20px 0; }
+        .form-group { margin-bottom: 20px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; }
+        input, textarea, select { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 5px; }
+        button { background: #007bff; color: white; padding: 15px 30px; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; }
+        button:hover { background: #0056b3; }
+        .info { background: #e7f3ff; padding: 15px; border-radius: 5px; margin-bottom: 20px; }
+        .results { background: #f8f9fa; padding: 20px; border-radius: 5px; margin-top: 20px; border-left: 4px solid #28a745; }
+        .error { background: #f8d7da; padding: 15px; border-radius: 5px; margin-top: 20px; border-left: 4px solid #dc3545; }
+        .entry { background: white; padding: 15px; margin: 10px 0; border-radius: 5px; border: 1px solid #ddd; }
+        .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin: 20px 0; }
+        .stat-box { background: white; padding: 15px; border-radius: 5px; text-align: center; border: 1px solid #ddd; }
+        .stat-number { font-size: 24px; font-weight: bold; color: #007bff; }
+    </style>
+</head>
+<body>
+    <h1>🏢 Advisory Tracker - Personal Sheet Upload</h1>
+    
+    <div class="info">
+        <h3>📋 Upload Instructions:</h3>
+        <ul>
+            <li>Upload your Excel (.xlsx) or CSV file containing advisory tracking data</li>
+            <li>Make sure your sheet has columns: Product Name, Location, Status, Deployed in KE</li>
+            <li>The system will automatically extract and save individual entries to the database</li>
+            <li>You can then view and filter all entries</li>
+        </ul>
+    </div>
+    
+    <div class="container">
+        <h2>Upload Personal Sheet</h2>
+        <form id="uploadForm">
+            <div class="form-group">
+                <label for="title">Sheet Title:</label>
+                <input type="text" id="title" name="title" required placeholder="e.g., My Advisory Sheet - December 2023">
+            </div>
+            
+            <div class="form-group">
+                <label for="description">Description:</label>
+                <textarea id="description" name="description" rows="3" placeholder="Brief description of this sheet..."></textarea>
+            </div>
+            
+            <div class="form-group">
+                <label for="month_year">Month/Year:</label>
+                <input type="month" id="month_year" name="month_year" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="sheet_file">Select File:</label>
+                <input type="file" id="sheet_file" name="sheet_file" accept=".xlsx,.csv" required>
+            </div>
+            
+            <button type="submit">📤 Upload and Process Sheet</button>
+        </form>
+    </div>
+    
+    <div class="container">
+        <h2>🔍 View All Entries</h2>
+        <div style="margin-bottom: 20px;">
+            <button onclick="getAllEntries()">📊 Get All Entries from Database</button>
+            <button onclick="getDeployedEntries()">🎯 Get Deployed in KE = Yes</button>
+            <button onclick="getStatistics()">📈 Show Statistics</button>
+        </div>
+        
+        <div>
+            <label for="statusFilter">Filter by Status:</label>
+            <select id="statusFilter" onchange="filterByStatus()">
+                <option value="">All Statuses</option>
+                <option value="Completed">Completed</option>
+                <option value="In Progress">In Progress</option>
+                <option value="Pending">Pending</option>
+            </select>
+        </div>
+    </div>
+    
+    <div id="results"></div>
+    
+    <script>
+        // Set current month as default
+        document.getElementById('month_year').value = new Date().toISOString().slice(0, 7);
+        
+        // Auto-generate title based on current month
+        const now = new Date();
+        const monthNames = ["January", "February", "March", "April", "May", "June",
+            "July", "August", "September", "October", "November", "December"];
+        document.getElementById('title').value = `Personal Advisory Sheet - ${monthNames[now.getMonth()]} ${now.getFullYear()}`;
+        
+        // Login and get token (you might want to add a login form)
+        let authToken = null;
+        
+        async function login() {
+            try {
+                const response = await fetch('http://localhost:3000/api/users/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        email: 'admin@advisorytracker.com',
+                        password: 'admin123'
+                    })
+                });
+                const data = await response.json();
+                authToken = data.token;
+                return true;
+            } catch (error) {
+                console.error('Login failed:', error);
+                return false;
+            }
+        }
+        
+        document.getElementById('uploadForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            if (!authToken) {
+                const loginSuccess = await login();
+                if (!loginSuccess) {
+                    showError('Login failed. Please check your credentials.');
+                    return;
+                }
+            }
+            
+            const formData = new FormData();
+            formData.append('sheet_file', document.getElementById('sheet_file').files[0]);
+            formData.append('title', document.getElementById('title').value);
+            formData.append('description', document.getElementById('description').value);
+            formData.append('month_year', document.getElementById('month_year').value);
+            
+            try {
+                showResults('<div style="text-align: center;">📤 Uploading and processing your sheet...</div>');
+                
+                const response = await fetch('http://localhost:3000/api/sheets', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`
+                    },
+                    body: formData
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    showResults(`
+                        <h3>✅ Upload Successful!</h3>
+                        <p><strong>Sheet ID:</strong> ${result.sheet.id}</p>
+                        <p><strong>Title:</strong> ${result.sheet.title}</p>
+                        <p><strong>Entries Processed:</strong> ${result.totalRows || 'N/A'}</p>
+                        <p><strong>Database Entries Saved:</strong> ${result.savedEntries?.count || 'N/A'}</p>
+                        <p><strong>Next:</strong> Click "Get All Entries" to view your data!</p>
+                    `);
+                } else {
+                    showError(`Upload failed: ${result.message || 'Unknown error'}`);
+                }
+            } catch (error) {
+                showError(`Upload failed: ${error.message}`);
+            }
+        });
+        
+        async function getAllEntries() {
+            if (!authToken) {
+                const loginSuccess = await login();
+                if (!loginSuccess) return;
+            }
+            
+            try {
+                showResults('<div style="text-align: center;">📊 Loading all entries...</div>');
+                
+                const response = await fetch('http://localhost:3000/api/sheet-entries', {
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`
+                    }
+                });
+                
+                const entries = await response.json();
+                displayEntries(entries, 'All Entries');
+            } catch (error) {
+                showError(`Failed to get entries: ${error.message}`);
+            }
+        }
+        
+        async function getDeployedEntries() {
+            if (!authToken) {
+                const loginSuccess = await login();
+                if (!loginSuccess) return;
+            }
+            
+            try {
+                showResults('<div style="text-align: center;">🎯 Loading deployed entries...</div>');
+                
+                const response = await fetch('http://localhost:3000/api/sheet-entries/filter?deployed_in_ke=Yes', {
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`
+                    }
+                });
+                
+                const entries = await response.json();
+                displayEntries(entries, 'Entries where Deployed in KE = Yes');
+            } catch (error) {
+                showError(`Failed to get deployed entries: ${error.message}`);
+            }
+        }
+        
+        async function getStatistics() {
+            if (!authToken) {
+                const loginSuccess = await login();
+                if (!loginSuccess) return;
+            }
+            
+            try {
+                showResults('<div style="text-align: center;">📈 Loading statistics...</div>');
+                
+                const response = await fetch('http://localhost:3000/api/sheet-entries/stats', {
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`
+                    }
+                });
+                
+                const stats = await response.json();
+                displayStatistics(stats);
+            } catch (error) {
+                showError(`Failed to get statistics: ${error.message}`);
+            }
+        }
+        
+        async function filterByStatus() {
+            const status = document.getElementById('statusFilter').value;
+            if (!status) {
+                getAllEntries();
+                return;
+            }
+            
+            if (!authToken) {
+                const loginSuccess = await login();
+                if (!loginSuccess) return;
+            }
+            
+            try {
+                showResults('<div style="text-align: center;">🔍 Filtering by status...</div>');
+                
+                const response = await fetch(`http://localhost:3000/api/sheet-entries/filter?status=${encodeURIComponent(status)}`, {
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`
+                    }
+                });
+                
+                const entries = await response.json();
+                displayEntries(entries, `Entries with Status: ${status}`);
+            } catch (error) {
+                showError(`Failed to filter entries: ${error.message}`);
+            }
+        }
+        
+        function displayEntries(entries, title) {
+            const html = `
+                <h3>📋 ${title} (${entries.length} found)</h3>
+                ${entries.map((entry, index) => `
+                    <div class="entry">
+                        <h4>📌 Entry ${index + 1}</h4>
+                        <p><strong>Product:</strong> ${entry.product_name || 'N/A'}</p>
+                        <p><strong>Location:</strong> ${entry.location || 'N/A'}</p>
+                        <p><strong>Status:</strong> ${entry.status || 'N/A'}</p>
+                        <p><strong>Deployed in KE:</strong> ${entry.deployed_in_ke || 'N/A'}</p>
+                        <p><strong>Team:</strong> ${entry.team || 'N/A'}</p>
+                        <p><strong>Date:</strong> ${entry.date || 'N/A'}</p>
+                        <p><strong>Notes:</strong> ${entry.notes || 'N/A'}</p>
+                        <p><strong>From Sheet:</strong> ${entry.sheet_title}</p>
+                        <p><strong>Sheet Month:</strong> ${new Date(entry.sheet_month).toISOString().slice(0, 7)}</p>
+                    </div>
+                `).join('')}
+            `;
+            showResults(html);
+        }
+        
+        function displayStatistics(stats) {
+            const html = `
+                <h3>📈 Database Statistics</h3>
+                <div class="stats">
+                    <div class="stat-box">
+                        <div class="stat-number">${stats.total_entries}</div>
+                        <div>Total Entries</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-number">${stats.total_sheets}</div>
+                        <div>Total Sheets</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-number">${stats.deployed_yes}</div>
+                        <div>Deployed in KE = Yes</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-number">${stats.deployed_no}</div>
+                        <div>Deployed in KE = No</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-number">${stats.status_completed}</div>
+                        <div>Completed</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-number">${stats.status_in_progress}</div>
+                        <div>In Progress</div>
+                    </div>
+                </div>
+            `;
+            showResults(html);
+        }
+        
+        function showResults(html) {
+            document.getElementById('results').innerHTML = `<div class="results">${html}</div>`;
+        }
+        
+        function showError(message) {
+            document.getElementById('results').innerHTML = `<div class="error"><strong>❌ Error:</strong> ${message}</div>`;
+        }
+    </script>
+</body>
+</html>

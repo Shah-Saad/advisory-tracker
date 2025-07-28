@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Advisory Sheet Upload</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .container {
+            background: #f5f5f5;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input, textarea, select {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        .error {
+            color: red;
+            background: #ffe6e6;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        .success {
+            color: green;
+            background: #e6ffe6;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        .file-info {
+            background: #e9ecef;
+            padding: 10px;
+            border-radius: 4px;
+            margin-top: 10px;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <h1>📊 Advisory Sheet Upload System</h1>
+    
+    <!-- Login Section -->
+    <div class="container" id="loginSection">
+        <h2>🔐 Admin Login</h2>
+        <form id="loginForm">
+            <div class="form-group">
+                <label for="email">Email:</label>
+                <input type="email" id="email" value="admin@advisorytracker.com" required>
+            </div>
+            <div class="form-group">
+                <label for="password">Password:</label>
+                <input type="password" id="password" value="admin123" required>
+            </div>
+            <button type="submit">Login</button>
+        </form>
+    </div>
+
+    <!-- Upload Section -->
+    <div class="container" id="uploadSection" style="display: none;">
+        <h2>📤 Upload Monthly Sheet</h2>
+        <form id="uploadForm" enctype="multipart/form-data">
+            <div class="form-group">
+                <label for="title">Sheet Title:</label>
+                <input type="text" id="title" placeholder="Monthly Advisory Sheet - January 2024" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="description">Description:</label>
+                <textarea id="description" rows="3" placeholder="Monthly advisory tracking sheet for teams"></textarea>
+            </div>
+            
+            <div class="form-group">
+                <label for="month_year">Month Year (YYYY-MM):</label>
+                <input type="month" id="month_year" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="file">Excel/CSV File:</label>
+                <input type="file" id="file" accept=".xlsx,.xls,.csv" required name="sheet_file">
+                <div class="file-info">
+                    <strong>Supported formats:</strong> Excel (.xlsx, .xls), CSV (.csv)<br>
+                    <strong>Maximum file size:</strong> 10MB<br>
+                    <strong>Required columns:</strong> Your file should contain relevant data for advisory tracking
+                </div>
+            </div>
+            
+            <button type="submit">Upload Sheet</button>
+        </form>
+    </div>
+
+    <!-- Results Section -->
+    <div class="container" id="resultsSection" style="display: none;">
+        <h2>📋 Upload Results</h2>
+        <div id="results"></div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:3000/api';
+        let authToken = null;
+
+        // Set current month and year
+        document.addEventListener('DOMContentLoaded', function() {
+            const now = new Date();
+            const monthYear = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+            document.getElementById('month_year').value = monthYear;
+            document.getElementById('title').value = `Monthly Advisory Sheet - ${now.toLocaleString('default', { month: 'long' })} ${now.getFullYear()}`;
+        });
+
+        // Login form handler
+        document.getElementById('loginForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            
+            try {
+                const response = await fetch(`${API_BASE}/users/login`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ email, password })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    authToken = data.token;
+                    document.getElementById('loginSection').style.display = 'none';
+                    document.getElementById('uploadSection').style.display = 'block';
+                    showMessage('Login successful!', 'success');
+                } else {
+                    showMessage('Login failed: ' + (data.message || 'Unknown error'), 'error');
+                }
+            } catch (error) {
+                showMessage('Login error: ' + error.message, 'error');
+            }
+        });
+
+        // Upload form handler
+        document.getElementById('uploadForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            if (!authToken) {
+                showMessage('Please login first', 'error');
+                return;
+            }
+            
+            const formData = new FormData();
+            formData.append('title', document.getElementById('title').value);
+            formData.append('description', document.getElementById('description').value);
+            formData.append('month_year', document.getElementById('month_year').value);
+            formData.append('sheet_file', document.getElementById('file').files[0]);
+            
+            try {
+                const response = await fetch(`${API_BASE}/sheets`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`
+                    },
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    showMessage('Sheet uploaded successfully!', 'success');
+                    document.getElementById('resultsSection').style.display = 'block';
+                    document.getElementById('results').innerHTML = `
+                        <h3>✅ Upload Successful</h3>
+                        <p><strong>Sheet ID:</strong> ${data.sheet.id}</p>
+                        <p><strong>Title:</strong> ${data.sheet.title}</p>
+                        <p><strong>Template Fields:</strong> ${data.templateFields.join(', ')}</p>
+                        <p><strong>File processed:</strong> ${data.originalFilename}</p>
+                    `;
+                } else {
+                    showMessage('Upload failed: ' + (data.message || 'Unknown error'), 'error');
+                }
+            } catch (error) {
+                showMessage('Upload error: ' + error.message, 'error');
+            }
+        });
+
+        function showMessage(message, type) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = type;
+            messageDiv.textContent = message;
+            
+            // Remove existing messages
+            const existingMessages = document.querySelectorAll('.error, .success');
+            existingMessages.forEach(msg => msg.remove());
+            
+            // Add new message
+            document.body.insertBefore(messageDiv, document.body.firstChild);
+            
+            // Auto-remove after 5 seconds
+            setTimeout(() => {
+                messageDiv.remove();
+            }, 5000);
+        }
+    </script>
+</body>
+</html>
