@@ -78,6 +78,27 @@
                 <option value="Pending">Pending</option>
             </select>
         </div>
+        
+        <div style="margin-top: 10px;">
+            <label for="vendorFilter">Filter by Vendor:</label>
+            <select id="vendorFilter" onchange="filterByVendor()">
+                <option value="">All Vendors</option>
+            </select>
+        </div>
+        
+        <div style="margin-top: 10px;">
+            <label for="categoryFilter">Filter by Product Category:</label>
+            <select id="categoryFilter" onchange="filterByCategory()">
+                <option value="">All Categories</option>
+                <option value="Distribution Equipment">Distribution Equipment</option>
+                <option value="Transmission Equipment">Transmission Equipment</option>
+                <option value="Generation Equipment">Generation Equipment</option>
+                <option value="Protection Systems">Protection Systems</option>
+                <option value="Monitoring Systems">Monitoring Systems</option>
+                <option value="Software">Software</option>
+                <option value="Other">Other</option>
+            </select>
+        </div>
     </div>
     
     <div id="results"></div>
@@ -91,6 +112,9 @@
         const monthNames = ["January", "February", "March", "April", "May", "June",
             "July", "August", "September", "October", "November", "December"];
         document.getElementById('title').value = `Personal Advisory Sheet - ${monthNames[now.getMonth()]} ${now.getFullYear()}`;
+        
+        // Load vendors for filtering
+        setTimeout(loadVendors, 1000); // Load after a delay to ensure auth is ready
         
         // Login and get token (you might want to add a login form)
         let authToken = null;
@@ -254,6 +278,89 @@
                 showError(`Failed to filter entries: ${error.message}`);
             }
         }
+
+        async function filterByVendor() {
+            const vendorName = document.getElementById('vendorFilter').value;
+            if (!vendorName) {
+                getAllEntries();
+                return;
+            }
+            
+            if (!authToken) {
+                const loginSuccess = await login();
+                if (!loginSuccess) return;
+            }
+            
+            try {
+                showResults('<div style="text-align: center;">🔍 Filtering by vendor...</div>');
+                
+                const response = await fetch(`http://localhost:3000/api/sheet-entries/filter?vendor_name=${encodeURIComponent(vendorName)}`, {
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`
+                    }
+                });
+                
+                const entries = await response.json();
+                displayEntries(entries, `Entries from Vendor: ${vendorName}`);
+            } catch (error) {
+                showError(`Failed to filter entries: ${error.message}`);
+            }
+        }
+
+        async function filterByCategory() {
+            const category = document.getElementById('categoryFilter').value;
+            if (!category) {
+                getAllEntries();
+                return;
+            }
+            
+            if (!authToken) {
+                const loginSuccess = await login();
+                if (!loginSuccess) return;
+            }
+            
+            try {
+                showResults('<div style="text-align: center;">🔍 Filtering by category...</div>');
+                
+                const response = await fetch(`http://localhost:3000/api/sheet-entries/filter?product_category=${encodeURIComponent(category)}`, {
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`
+                    }
+                });
+                
+                const entries = await response.json();
+                displayEntries(entries, `Entries in Category: ${category}`);
+            } catch (error) {
+                showError(`Failed to filter entries: ${error.message}`);
+            }
+        }
+
+        async function loadVendors() {
+            if (!authToken) {
+                const loginSuccess = await login();
+                if (!loginSuccess) return;
+            }
+            
+            try {
+                const response = await fetch('http://localhost:3000/api/vendors', {
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`
+                    }
+                });
+                
+                const vendors = await response.json();
+                const vendorSelect = document.getElementById('vendorFilter');
+                
+                vendors.forEach(vendor => {
+                    const option = document.createElement('option');
+                    option.value = vendor.name;
+                    option.textContent = `${vendor.name} (${vendor.company})`;
+                    vendorSelect.appendChild(option);
+                });
+            } catch (error) {
+                console.error('Failed to load vendors:', error);
+            }
+        }
         
         function displayEntries(entries, title) {
             const html = `
@@ -262,12 +369,17 @@
                     <div class="entry">
                         <h4>📌 Entry ${index + 1}</h4>
                         <p><strong>Product:</strong> ${entry.product_name || 'N/A'}</p>
+                        ${entry.product_code ? `<p><strong>Product Code:</strong> ${entry.product_code}</p>` : ''}
+                        ${entry.product_category ? `<p><strong>Category:</strong> ${entry.product_category}</p>` : ''}
+                        ${entry.vendor_name ? `<p><strong>Vendor:</strong> ${entry.vendor_name}</p>` : ''}
+                        ${entry.product_price ? `<p><strong>Price:</strong> KSh ${parseFloat(entry.product_price).toLocaleString()}</p>` : ''}
                         <p><strong>Location:</strong> ${entry.location || 'N/A'}</p>
                         <p><strong>Status:</strong> ${entry.status || 'N/A'}</p>
                         <p><strong>Deployed in KE:</strong> ${entry.deployed_in_ke || 'N/A'}</p>
                         <p><strong>Team:</strong> ${entry.team || 'N/A'}</p>
                         <p><strong>Date:</strong> ${entry.date || 'N/A'}</p>
                         <p><strong>Notes:</strong> ${entry.notes || 'N/A'}</p>
+                        ${entry.technical_specs ? `<p><strong>Technical Specs:</strong> ${JSON.stringify(entry.technical_specs, null, 2)}</p>` : ''}
                         <p><strong>From Sheet:</strong> ${entry.sheet_title}</p>
                         <p><strong>Sheet Month:</strong> ${new Date(entry.sheet_month).toISOString().slice(0, 7)}</p>
                     </div>

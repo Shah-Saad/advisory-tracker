@@ -1,7 +1,73 @@
 const express = require('express');
 const router = express.Router();
+const path = require('path');
 const SheetEntryService = require('../services/SheetEntryService');
-const auth = require('../middlewares/auth');
+const FileProcessingService = require('../services/FileProcessingService');
+const { auth } = require('../middlewares/auth');
+const { uploadMiddleware } = require('../middlewares/uploadMiddleware');
+
+/**
+ * @route POST /api/sheet-entries/upload
+ * @desc Upload and process a sheet file (Excel/CSV)
+ * @access Private
+ */
+router.post('/upload', auth, uploadMiddleware, async (req, res) => {
+    try {
+        // Check if user has admin role
+        if (req.user.role !== 'admin') {
+            return res.status(403).json({ 
+                message: 'Access denied. Only administrators can upload sheets.' 
+            });
+        }
+
+        console.log('File upload request received');
+        
+        if (!req.file) {
+            console.log('No file uploaded');
+            return res.status(400).json({ message: 'No file uploaded' });
+        }
+
+        console.log('File details:', {
+            originalname: req.file.originalname,
+            filename: req.file.filename,
+            path: req.file.path,
+            size: req.file.size
+        });
+
+        // Process the uploaded file
+        const fileExtension = path.extname(req.file.originalname).toLowerCase();
+        console.log('Processing file with extension:', fileExtension);
+        
+        const processedData = await FileProcessingService.processSheetFile(req.file.path, fileExtension);
+        console.log('File processed successfully:', {
+            totalRows: processedData.totalRows,
+            headerCount: processedData.headers.length,
+            headers: processedData.headers
+        });
+        
+        // For now, let's create a dummy sheet and save entries
+        // In a real app, you'd want to create an actual sheet first
+        const dummySheetId = 1; // This should be replaced with actual sheet creation
+        
+        const savedEntries = await SheetEntryService.saveSheetEntries(dummySheetId, processedData);
+        console.log('Entries saved successfully:', savedEntries.length);
+
+        res.json({
+            message: 'File uploaded and processed successfully',
+            data: savedEntries,
+            processedCount: savedEntries.length,
+            totalRows: processedData.totalRows,
+            headers: processedData.headers
+        });
+    } catch (error) {
+        console.error('Error uploading file:', error);
+        res.status(500).json({ 
+            message: 'Failed to upload and process file', 
+            error: error.message,
+            details: error.stack
+        });
+    }
+});
 
 /**
  * @route GET /api/sheet-entries
@@ -16,6 +82,30 @@ router.get('/', auth, async (req, res) => {
         console.error('Error getting all entries:', error);
         res.status(500).json({ 
             message: 'Failed to retrieve entries', 
+            error: error.message 
+        });
+    }
+});
+
+/**
+ * @route POST /api/sheet-entries/filter
+ * @desc Filter sheet entries with POST body
+ * @access Private
+ */
+router.post('/filter', auth, async (req, res) => {
+    try {
+        const filters = req.body.filters || {};
+        const entries = await SheetEntryService.filterEntries(filters);
+        
+        res.json({
+            message: 'Entries filtered successfully',
+            data: entries,
+            count: entries.length
+        });
+    } catch (error) {
+        console.error('Error filtering entries:', error);
+        res.status(500).json({ 
+            message: 'Failed to filter entries', 
             error: error.message 
         });
     }
@@ -48,6 +138,10 @@ router.get('/stats', auth, async (req, res) => {
  * @queryParams {string} team - Filter by team
  * @queryParams {string} location - Filter by location
  * @queryParams {string} product_name - Filter by product name
+ * @queryParams {string} vendor_name - Filter by vendor name
+ * @queryParams {string} product_category - Filter by product category
+ * @queryParams {number} vendor_id - Filter by vendor ID
+ * @queryParams {number} product_id - Filter by product ID
  */
 router.get('/filter', auth, async (req, res) => {
     try {
@@ -72,6 +166,22 @@ router.get('/filter', auth, async (req, res) => {
         
         if (req.query.product_name) {
             filters.product_name = req.query.product_name;
+        }
+
+        if (req.query.vendor_name) {
+            filters.vendor_name = req.query.vendor_name;
+        }
+
+        if (req.query.product_category) {
+            filters.product_category = req.query.product_category;
+        }
+
+        if (req.query.vendor_id) {
+            filters.vendor_id = req.query.vendor_id;
+        }
+
+        if (req.query.product_id) {
+            filters.product_id = req.query.product_id;
         }
         
         const entries = await SheetEntryService.filterEntries(filters);
@@ -121,8 +231,8 @@ router.put('/:id', auth, async (req, res) => {
             return res.status(404).json({ message: 'Sheet entry not found' });
         }
         
-        // Update the entry
-        const updatedEntry = await SheetEntryService.updateEntry(id, updateData);
+        // Update the entry with user information for notifications
+        const updatedEntry = await SheetEntryService.updateEntry(id, updateData, req.user);
         res.json({
             message: 'Entry updated successfully',
             entry: updatedEntry
@@ -160,6 +270,37 @@ router.delete('/:id', auth, async (req, res) => {
             message: 'Failed to delete entry', 
             error: error.message 
         });
+    }
+});
+
+/**
+ * @route GET /api/sheet-entries/:id
+ * @desc Get a single entry by ID with detailed information
+ * @access Private
+ */
+router.get('/:id', auth, async (req, res) => {
+    try {
+        const { id } = req.params;
+        
+        if (!id || isNaN(id)) {
+            return res.status(400).json({ message: 'Invalid entry ID' });
+        }
+
+        const entry = await SheetEntryService.getEntryById(parseInt(id));
+        res.json({
+            message: 'Entry retrieved successfully',
+            data: entry
+        });
+    } catch (error) {
+        console.error('Error getting entry:', error);
+        if (error.message === 'Entry not found') {
+            res.status(404).json({ message: 'Entry not found' });
+        } else {
+            res.status(500).json({ 
+                message: 'Failed to retrieve entry', 
+                error: error.message 
+            });
+        }
     }
 });
 

@@ -11,15 +11,10 @@ class Vendor extends BaseModel {
     return this.findOneBy({ email });
   }
 
-  static async findActiveVendors() {
-    return this.findBy({ status: 'active' });
-  }
-
   static async searchByName(searchTerm) {
     const db = require('../config/db');
     return db(this.tableName)
-      .where('name', 'ilike', `%${searchTerm}%`)
-      .orWhere('company', 'ilike', `%${searchTerm}%`);
+      .where('name', 'ilike', `%${searchTerm}%`);
   }
 }
 

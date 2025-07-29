@@ -41,7 +41,7 @@ class UserService {
     const newUser = await User.create({
       ...otherData,
       role_id,
-      password: hashedPassword,
+      password_hash: hashedPassword,
       status: 'active',
       created_by: createdBy
     });
@@ -80,7 +80,7 @@ class UserService {
 
     // Hash password if provided
     if (password) {
-      updateData.password = await bcrypt.hash(password, 12);
+      updateData.password_hash = await bcrypt.hash(password, 12);
     }
 
     await User.update(id, updateData);

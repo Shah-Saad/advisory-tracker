@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const teamController = require('../controllers/teamController');
-const auth = require('../middlewares/auth');
+const { auth } = require('../middlewares/auth');
 const { requirePermission, requireAnyPermission } = require('../middlewares/rbac');
 
 // All team routes require authentication

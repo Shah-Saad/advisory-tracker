@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const sheetController = require('../controllers/sheetController');
-const auth = require('../middlewares/auth');
+const { auth } = require('../middlewares/auth');
 const { requirePermission, requireAnyPermission } = require('../middlewares/rbac');
 const { uploadMiddleware } = require('../middlewares/uploadMiddleware');
 

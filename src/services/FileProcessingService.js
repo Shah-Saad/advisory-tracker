@@ -58,24 +58,72 @@ class FileProcessingService {
       const sheetName = workbook.SheetNames[0]; // Use first sheet
       const worksheet = workbook.Sheets[sheetName];
       
-      // Convert to JSON
-      const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+      // Convert to JSON with raw values preserved
+      const jsonData = XLSX.utils.sheet_to_json(worksheet, { 
+        header: 1,
+        raw: false, // Convert dates and numbers to strings for consistency
+        dateNF: 'yyyy-mm-dd' // Format dates consistently
+      });
       
       if (jsonData.length === 0) {
         throw new Error('Excel file is empty');
       }
       
-      const headers = jsonData[0] || [];
-      const rows = jsonData.slice(1).map(row => {
-        const obj = {};
-        headers.forEach((header, index) => {
-          obj[header] = row[index] || '';
+      // Clean up headers - remove extra spaces and normalize
+      const rawHeaders = jsonData[0] || [];
+      const headers = rawHeaders.map(header => {
+        if (typeof header === 'string') {
+          return header.trim().replace(/\s+/g, ' '); // Normalize whitespace
+        }
+        return header;
+      }).filter(header => header && header !== ''); // Remove empty headers
+      
+      // Process data rows
+      const rows = jsonData.slice(1)
+        .filter(row => row && row.some(cell => cell !== undefined && cell !== '')) // Remove empty rows
+        .map(row => {
+          const obj = {};
+          headers.forEach((header, index) => {
+            let value = row[index];
+            
+            // Handle different data types
+            if (value !== undefined && value !== null) {
+              // Convert to string and trim
+              value = String(value).trim();
+              
+              // Handle Y/N values
+              if (value.toLowerCase() === 'yes' || value.toLowerCase() === 'y') {
+                value = 'Y';
+              } else if (value.toLowerCase() === 'no' || value.toLowerCase() === 'n') {
+                value = 'N';
+              }
+              
+              // Handle dates - convert Excel serial dates
+              if (typeof row[index] === 'number' && header.toLowerCase().includes('date')) {
+                try {
+                  const excelDate = XLSX.SSF.parse_date_code(row[index]);
+                  if (excelDate) {
+                    value = `${excelDate.y}-${String(excelDate.m).padStart(2, '0')}-${String(excelDate.d).padStart(2, '0')}`;
+                  }
+                } catch (e) {
+                  // Keep original value if date parsing fails
+                }
+              }
+            } else {
+              value = '';
+            }
+            
+            obj[header] = value;
+          });
+          return obj;
         });
-        return obj;
-      });
+      
+      console.log(`Processed Excel file: ${headers.length} columns, ${rows.length} rows`);
+      console.log('Headers found:', headers);
       
       return { headers, rows };
     } catch (error) {
+      console.error('Excel processing error:', error);
       throw new Error(`Excel processing failed: ${error.message}`);
     }
   }

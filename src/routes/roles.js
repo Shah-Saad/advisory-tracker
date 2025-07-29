@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const roleController = require('../controllers/roleController');
-const auth = require('../middlewares/auth');
+const { auth } = require('../middlewares/auth');
 const { requirePermission } = require('../middlewares/rbac');
 
 // All role routes require authentication and manage_roles permission
