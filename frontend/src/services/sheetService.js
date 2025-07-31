@@ -23,12 +23,13 @@ apiClient.interceptors.request.use(
 
 const sheetService = {
   // Upload sheet file
-  uploadSheet: async (file, month, year) => {
+  uploadSheet: async (file, month, year, distributeToTeams = false) => {
     try {
       const formData = new FormData();
       formData.append('sheet_file', file);
       if (month) formData.append('month', month);
       if (year) formData.append('year', year);
+      if (distributeToTeams) formData.append('distributeToTeams', 'true');
 
       const response = await apiClient.post('/sheet-entries/upload', formData, {
         headers: {
@@ -99,6 +100,46 @@ const sheetService = {
       return response.data;
     } catch (error) {
       throw error.response?.data || { message: 'Failed to delete entry' };
+    }
+  },
+
+  // Admin-only: Get all sheets
+  getAllSheets: async () => {
+    try {
+      const response = await apiClient.get('/sheets');
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to fetch sheets' };
+    }
+  },
+
+  // Admin-only: Get sheet with team-specific versions
+  getSheetByTeams: async (sheetId) => {
+    try {
+      const response = await apiClient.get(`/sheets/${sheetId}/team-views`);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to fetch team views' };
+    }
+  },
+
+  // Admin-only: Get specific team's version of a sheet
+  getSheetForTeam: async (sheetId, teamId) => {
+    try {
+      const response = await apiClient.get(`/sheets/${sheetId}/team/${teamId}`);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to fetch team sheet' };
+    }
+  },
+
+  // Admin-only: Get all sheets with team status summary
+  getAllSheetsWithTeamStatus: async () => {
+    try {
+      const response = await apiClient.get('/sheets/team-status-summary');
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to fetch sheets with team status' };
     }
   }
 };

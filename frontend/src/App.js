@@ -1,15 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, Link } from 'react-router-dom';
+import { ToastContainer } from 'react-toastify';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import 'bootstrap/dist/js/bootstrap.bundle.min.js';
+import 'react-toastify/dist/ReactToastify.css';
 
 // Import components from the correct paths
 import Login from './components/Auth/Login';
+import ChangePassword from './components/Auth/ChangePassword';
 import Dashboard from './components/Dashboard/Dashboard';
 import SheetUpload from './components/SheetUpload/SheetUpload';
 import EntryList from './components/EntryList/EntryList';
 import Filters from './components/Filters/Filters';
 import AdminUserManagement from './components/Admin/AdminUserManagement';
+import TeamManagement from './components/Admin/TeamManagement';
+import TeamSheetSwitcher from './components/Admin/TeamSheetSwitcher';
 import NotificationPanel from './components/Admin/NotificationPanel';
 import authService from './services/authService';
 
@@ -18,6 +23,7 @@ import './App.css';
 function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [showChangePassword, setShowChangePassword] = useState(false);
 
   useEffect(() => {
     checkAuthStatus();
@@ -88,7 +94,19 @@ function App() {
                   {user && user.role === 'admin' && (
                     <Link className="nav-link text-white" to="/admin/users">
                       <i className="fas fa-users-cog me-1"></i>
-                      Admin
+                      Users
+                    </Link>
+                  )}
+                  {user && user.role === 'admin' && (
+                    <Link className="nav-link text-white" to="/admin/teams">
+                      <i className="fas fa-users me-1"></i>
+                      Teams
+                    </Link>
+                  )}
+                  {user && user.role === 'admin' && (
+                    <Link className="nav-link text-white" to="/admin/team-sheets">
+                      <i className="fas fa-layer-group me-1"></i>
+                      Team Sheets
                     </Link>
                   )}
                 </div>
@@ -111,6 +129,16 @@ function App() {
                     </button>
                     <ul className="dropdown-menu">
                       <li>
+                        <button 
+                          className="dropdown-item" 
+                          onClick={() => setShowChangePassword(true)}
+                        >
+                          <i className="fas fa-key me-2"></i>
+                          Change Password
+                        </button>
+                      </li>
+                      <li><hr className="dropdown-divider" /></li>
+                      <li>
                         <button className="dropdown-item" onClick={handleLogout}>
                           <i className="fas fa-sign-out-alt me-2"></i>
                           Logout
@@ -123,20 +151,49 @@ function App() {
             </nav>
 
             {/* Main Content */}
-            <Routes>
-              <Route path="/dashboard" element={<Dashboard user={user} />} />
-              <Route path="/upload" element={<SheetUpload />} />
-              <Route path="/entries" element={<EntryList />} />
-              <Route path="/filters" element={<Filters />} />
-              {user && user.role === 'admin' && (
-                <Route path="/admin/users" element={<AdminUserManagement />} />
+            <div className="container-fluid mt-3">
+              {showChangePassword ? (
+                <div className="row justify-content-center">
+                  <div className="col-md-6">
+                    <ChangePassword onCancel={() => setShowChangePassword(false)} />
+                  </div>
+                </div>
+              ) : (
+                <Routes>
+                  <Route path="/dashboard" element={<Dashboard user={user} />} />
+                  <Route path="/upload" element={<SheetUpload />} />
+                  <Route path="/entries" element={<EntryList />} />
+                  <Route path="/filters" element={<Filters />} />
+                  {user && user.role === 'admin' && (
+                    <Route path="/admin/users" element={<AdminUserManagement />} />
+                  )}
+                  {user && user.role === 'admin' && (
+                    <Route path="/admin/teams" element={<TeamManagement />} />
+                  )}
+                  {user && user.role === 'admin' && (
+                    <Route path="/admin/team-sheets" element={<TeamSheetSwitcher />} />
+                  )}
+                  <Route path="/" element={<Navigate to="/dashboard" />} />
+                </Routes>
               )}
-              <Route path="/" element={<Navigate to="/dashboard" />} />
-            </Routes>
+            </div>
           </>
         ) : (
           <Login onLogin={handleLogin} />
         )}
+        
+        {/* Toast Container for notifications */}
+        <ToastContainer
+          position="top-right"
+          autoClose={5000}
+          hideProgressBar={false}
+          newestOnTop={false}
+          closeOnClick
+          rtl={false}
+          pauseOnFocusLoss
+          draggable
+          pauseOnHover
+        />
       </div>
     </Router>
   );
