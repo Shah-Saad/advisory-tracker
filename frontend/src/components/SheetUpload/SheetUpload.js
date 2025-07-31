@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { toast } from 'react-toastify';
 import sheetService from '../../services/sheetService';
 import authService from '../../services/authService';
+import apiClient from '../../services/api';
 
 const SheetUpload = () => {
   const [file, setFile] = useState(null);
@@ -12,7 +14,8 @@ const SheetUpload = () => {
   const [error, setError] = useState('');
   const [uploadResult, setUploadResult] = useState(null);
   const [currentUser, setCurrentUser] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [deletingAll, setDeletingAll] = useState(false);
+  const [distributeToTeams, setDistributeToTeams] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -22,7 +25,6 @@ const SheetUpload = () => {
   const loadCurrentUser = () => {
     const user = authService.getCurrentUser();
     setCurrentUser(user);
-    setLoading(false);
   };
 
   // Check if user has upload permissions (admin only)
@@ -69,13 +71,23 @@ const SheetUpload = () => {
     setSuccess('');
 
     try {
-      const result = await sheetService.uploadSheet(file, month, year);
-      setSuccess(`Successfully uploaded ${result.processedCount} entries!`);
+      const result = await sheetService.uploadSheet(file, month, year, distributeToTeams);
+      
+      if (distributeToTeams) {
+        setSuccess(`Successfully uploaded ${result.processedCount} entries and distributed to all teams!`);
+      } else {
+        setSuccess(`Successfully uploaded ${result.processedCount} entries!`);
+      }
+      
       setUploadResult(result);
       
       // Reset form
       setFile(null);
-      document.getElementById('fileInput').value = '';
+      setDistributeToTeams(false);
+      const fileInput = document.getElementById('fileInput');
+      if (fileInput) {
+        fileInput.value = '';
+      }
       
     } catch (error) {
       setError(error.message || 'Upload failed');
@@ -86,6 +98,47 @@ const SheetUpload = () => {
 
   const handleViewEntries = () => {
     navigate('/entries');
+  };
+
+  const handleDeleteAllEntries = async () => {
+    // Show confirmation dialog
+    const confirmed = window.confirm(
+      'Are you sure you want to delete ALL sheet entries from the database? This action cannot be undone.'
+    );
+    
+    if (!confirmed) {
+      return;
+    }
+
+    setDeletingAll(true);
+    setError('');
+    setSuccess('');
+
+    try {
+      const response = await apiClient.delete('/sheet-entries/all');
+      
+      toast.success(
+        `Successfully deleted ${response.data.deletedCount} entries from the database`,
+        {
+          position: "top-right",
+          autoClose: 5000,
+        }
+      );
+      
+      setSuccess(`Database cleaned! Deleted ${response.data.deletedCount} entries.`);
+      
+    } catch (error) {
+      console.error('Error deleting all entries:', error);
+      const errorMessage = error.response?.data?.message || 'Failed to delete entries';
+      setError(errorMessage);
+      
+      toast.error(errorMessage, {
+        position: "top-right",
+        autoClose: 5000,
+      });
+    } finally {
+      setDeletingAll(false);
+    }
   };
 
   return (
@@ -104,6 +157,63 @@ const SheetUpload = () => {
               <i className="fas fa-arrow-left me-2"></i>Back to Dashboard
             </button>
           </div>
+
+          {/* Database Cleanup Section - Only for Admins */}
+          {canUpload() && (
+            <div className="card mb-4 border-warning">
+              <div className="card-header bg-warning bg-opacity-10">
+                <h5 className="mb-0 text-warning">
+                  <i className="fas fa-exclamation-triangle me-2"></i>
+                  Database Management
+                </h5>
+              </div>
+              <div className="card-body">
+                <p className="text-muted mb-3">
+                  Use this section to clear all existing sheet entries before uploading a new file. 
+                  This is useful when you want to replace all data with a fresh upload.
+                </p>
+                
+                {error && (
+                  <div className="alert alert-danger" role="alert">
+                    <i className="fas fa-exclamation-triangle me-2"></i>
+                    {error}
+                  </div>
+                )}
+
+                {success && (
+                  <div className="alert alert-success" role="alert">
+                    <i className="fas fa-check-circle me-2"></i>
+                    {success}
+                  </div>
+                )}
+                
+                <div className="d-flex align-items-center gap-3">
+                  <button
+                    type="button"
+                    className="btn btn-danger"
+                    onClick={handleDeleteAllEntries}
+                    disabled={deletingAll}
+                  >
+                    {deletingAll ? (
+                      <>
+                        <span className="spinner-border spinner-border-sm me-2" role="status"></span>
+                        Deleting All Entries...
+                      </>
+                    ) : (
+                      <>
+                        <i className="fas fa-trash me-2"></i>
+                        Delete All Entries
+                      </>
+                    )}
+                  </button>
+                  <small className="text-muted">
+                    <i className="fas fa-info-circle me-1"></i>
+                    This will permanently delete all sheet entries from the database
+                  </small>
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className="card">
             <div className="card-body">
@@ -214,6 +324,26 @@ const SheetUpload = () => {
                       </div>
                     </div>
                   )}
+
+                  <div className="mb-4">
+                    <div className="form-check">
+                      <input
+                        className="form-check-input"
+                        type="checkbox"
+                        id="distributeToTeams"
+                        checked={distributeToTeams}
+                        onChange={(e) => setDistributeToTeams(e.target.checked)}
+                      />
+                      <label className="form-check-label" htmlFor="distributeToTeams">
+                        <strong>Distribute to Teams</strong>
+                      </label>
+                      <div className="form-text">
+                        <i className="fas fa-info-circle me-1"></i>
+                        Automatically create copies of this sheet for all three operational teams 
+                        (Generation, Distribution, Transmission)
+                      </div>
+                    </div>
+                  </div>
 
                   <div className="d-grid">
                     <button

@@ -70,40 +70,32 @@ const NotificationPanel = () => {
         headers: { Authorization: `Bearer ${token}` }
       });
       
-      // Update local state
-      setNotifications(prev => 
-        prev.map(notification => 
-          notification.id === notificationId 
-            ? { ...notification, is_read: true }
-            : notification
-        )
-      );
+      // Remove the notification from the list instead of marking as read
+      setNotifications(prev => prev.filter(notification => notification.id !== notificationId));
       
       // Update unread count
       setUnreadCount(prev => Math.max(0, prev - 1));
     } catch (error) {
-      console.error('Error marking notification as read:', error);
+      console.error('Error removing notification:', error);
     }
   };
 
   const markAllAsRead = async () => {
     try {
       const token = localStorage.getItem('token');
-      const unreadNotifications = notifications.filter(n => !n.is_read);
       
-      for (const notification of unreadNotifications) {
-        await axios.put(`http://localhost:3000/api/notifications/${notification.id}/read`, {}, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-      }
+      // Use the dedicated remove-all endpoint
+      await axios.put('http://localhost:3000/api/notifications/read-all', {}, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
       
-      // Update local state
-      setNotifications(prev => 
-        prev.map(notification => ({ ...notification, is_read: true }))
-      );
+      // Clear all notifications from the UI
+      setNotifications([]);
       setUnreadCount(0);
+      
+      console.log('All notifications removed successfully');
     } catch (error) {
-      console.error('Error marking all notifications as read:', error);
+      console.error('Error removing all notifications:', error);
     }
   };
 

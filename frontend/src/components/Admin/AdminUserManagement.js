@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { toast } from 'react-toastify';
+import { FaKey } from 'react-icons/fa';
 import apiClient from '../../services/api';
 
 const AdminUserManagement = () => {
@@ -6,6 +8,11 @@ const AdminUserManagement = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [resetLoading, setResetLoading] = useState({});
+  
+  // Define the three operational teams
+  const operationalTeams = ['generation', 'distribution', 'transmission'];
+  
   const [newUser, setNewUser] = useState({
     username: '',
     email: '',
@@ -13,7 +20,7 @@ const AdminUserManagement = () => {
     first_name: '',
     last_name: '',
     role: 'user',
-    department: ''
+    team: ''
   });
 
   useEffect(() => {
@@ -45,14 +52,33 @@ const AdminUserManagement = () => {
         first_name: '',
         last_name: '',
         role: 'user',
-        department: ''
+        team: ''
       });
       setShowCreateForm(false);
       fetchUsers();
-      alert('User created successfully!');
+      toast.success('User created successfully!');
     } catch (error) {
       console.error('Error creating user:', error);
-      alert('Failed to create user: ' + (error.response?.data?.error || error.message));
+      toast.error('Failed to create user: ' + (error.response?.data?.error || error.message));
+    }
+  };
+
+  const resetUserPassword = async (userId, username) => {
+    if (!window.confirm(`Are you sure you want to reset ${username}'s password to "123456"?`)) {
+      return;
+    }
+
+    setResetLoading(prev => ({ ...prev, [userId]: true }));
+
+    try {
+      const response = await apiClient.put(`/password/reset/${userId}`);
+      toast.success(`${username}'s password has been reset to "123456"`);
+      console.log('Password reset response:', response.data);
+    } catch (error) {
+      console.error('Error resetting password:', error);
+      toast.error(error.response?.data?.error || 'Failed to reset password');
+    } finally {
+      setResetLoading(prev => ({ ...prev, [userId]: false }));
     }
   };
 
@@ -61,10 +87,10 @@ const AdminUserManagement = () => {
       try {
         await apiClient.delete(`/admin/users/${userId}`);
         fetchUsers();
-        alert('User deleted successfully!');
+        toast.success('User deleted successfully!');
       } catch (error) {
         console.error('Error deleting user:', error);
-        alert('Failed to delete user: ' + (error.response?.data?.error || error.message));
+        toast.error('Failed to delete user: ' + (error.response?.data?.error || error.message));
       }
     }
   };
@@ -77,7 +103,7 @@ const AdminUserManagement = () => {
       fetchUsers();
     } catch (error) {
       console.error('Error updating user status:', error);
-      alert('Failed to update user status');
+      toast.error('Failed to update user status');
     }
   };
 
@@ -105,12 +131,22 @@ const AdminUserManagement = () => {
         <div className="col-12">
           <div className="d-flex justify-content-between align-items-center mb-4">
             <h2>User Management</h2>
-            <button 
-              className="btn btn-primary"
-              onClick={() => setShowCreateForm(!showCreateForm)}
-            >
-              {showCreateForm ? 'Cancel' : 'Create New User'}
-            </button>
+            <div className="d-flex gap-2">
+              <button 
+                className="btn btn-outline-secondary"
+                onClick={fetchUsers}
+                disabled={loading}
+              >
+                <i className="fas fa-sync-alt me-1"></i>
+                Refresh Data
+              </button>
+              <button 
+                className="btn btn-primary"
+                onClick={() => setShowCreateForm(!showCreateForm)}
+              >
+                {showCreateForm ? 'Cancel' : 'Create New User'}
+              </button>
+            </div>
           </div>
 
           {error && (
@@ -201,15 +237,30 @@ const AdminUserManagement = () => {
                         <option value="admin">Admin</option>
                       </select>
                     </div>
-                    <div className="col-md-4 mb-3">
-                      <label className="form-label">Department</label>
-                      <input
-                        type="text"
-                        className="form-control"
-                        name="department"
-                        value={newUser.department}
+                  </div>
+                  <div className="row">
+                    <div className="col-md-6 mb-3">
+                      <label className="form-label">
+                        <i className="fas fa-users me-2"></i>
+                        Team Assignment
+                      </label>
+                      <select
+                        className="form-select"
+                        name="team"
+                        value={newUser.team}
                         onChange={handleInputChange}
-                      />
+                      >
+                        <option value="">Select Team Assignment</option>
+                        {operationalTeams.map(team => (
+                          <option key={team} value={team}>
+                            {team.charAt(0).toUpperCase() + team.slice(1)} Team
+                          </option>
+                        ))}
+                      </select>
+                      <div className="form-text">
+                        <i className="fas fa-info-circle me-1"></i>
+                        Assign user to one of the three operational teams (Generation, Distribution, Transmission)
+                      </div>
                     </div>
                   </div>
                   <div className="d-flex gap-2">
@@ -247,7 +298,7 @@ const AdminUserManagement = () => {
                         <th>Email</th>
                         <th>Name</th>
                         <th>Role</th>
-                        <th>Department</th>
+                        <th>Team</th>
                         <th>Status</th>
                         <th>Actions</th>
                       </tr>
@@ -267,7 +318,19 @@ const AdminUserManagement = () => {
                               {user.role}
                             </span>
                           </td>
-                          <td>{user.department || '-'}</td>
+                          <td>
+                            {user.team ? (
+                              <span className="badge bg-info text-white fs-6 px-2 py-1">
+                                <i className="fas fa-users me-1"></i>
+                                {user.team.charAt(0).toUpperCase() + user.team.slice(1)} Team
+                              </span>
+                            ) : (
+                              <span className="text-muted fst-italic">
+                                <i className="fas fa-user-slash me-1"></i>
+                                No Team Assigned
+                              </span>
+                            )}
+                          </td>
                           <td>
                             <span className={`badge ${user.is_active ? 'bg-success' : 'bg-secondary'}`}>
                               {user.is_active ? 'Active' : 'Inactive'}
@@ -282,6 +345,27 @@ const AdminUserManagement = () => {
                               >
                                 {user.is_active ? 'Deactivate' : 'Activate'}
                               </button>
+                              {/* Only show reset password button for non-admin users */}
+                              {user.role !== 'admin' && (
+                                <button
+                                  className="btn btn-outline-secondary"
+                                  onClick={() => resetUserPassword(user.id, user.username)}
+                                  disabled={resetLoading[user.id]}
+                                  title={`Reset ${user.username}'s password to "123456"`}
+                                >
+                                  {resetLoading[user.id] ? (
+                                    <>
+                                      <span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+                                      Resetting...
+                                    </>
+                                  ) : (
+                                    <>
+                                      <FaKey className="me-1" />
+                                      Reset Password
+                                    </>
+                                  )}
+                                </button>
+                              )}
                               {/* Only show delete button for non-admin users */}
                               {user.role !== 'admin' && (
                                 <button

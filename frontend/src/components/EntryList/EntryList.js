@@ -312,6 +312,56 @@ const EntryList = () => {
     }
   };
 
+  const isValidUrl = (string) => {
+    try {
+      new URL(string);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  };
+
+  const renderSourceLink = (source) => {
+    if (!source || source === 'N/A') {
+      return 'N/A';
+    }
+    
+    // Handle common source patterns
+    if (source.toLowerCase().includes('cisa') || source.toLowerCase().includes('us-cert')) {
+      // If it's just "CISA" without URL, provide the main CISA link
+      if (source.toLowerCase() === 'cisa' || source.toLowerCase() === 'us-cert') {
+        return (
+          <a 
+            href="https://www.cisa.gov/known-exploited-vulnerabilities-catalog" 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className="text-decoration-none"
+            title="Open CISA Known Exploited Vulnerabilities Catalog"
+          >
+            CISA <i className="fas fa-external-link-alt ms-1 small"></i>
+          </a>
+        );
+      }
+    }
+    
+    if (isValidUrl(source)) {
+      return (
+        <a 
+          href={source} 
+          target="_blank" 
+          rel="noopener noreferrer"
+          className="text-decoration-none"
+          title="Open source link"
+        >
+          {source.length > 50 ? `${source.substring(0, 50)}...` : source}
+          <i className="fas fa-external-link-alt ms-1 small"></i>
+        </a>
+      );
+    }
+    
+    return source;
+  };
+
   // Filter and sort entries
   const filteredEntries = entries.filter(entry =>
     Object.values(entry).some(value =>
@@ -442,6 +492,17 @@ const EntryList = () => {
                             scope="col"
                             rowSpan="2"
                             style={{ cursor: 'pointer', verticalAlign: 'middle' }}
+                            onClick={() => handleSort('product_name')}
+                          >
+                            Product Name
+                            {sortField === 'product_name' && (
+                              <i className={`fas fa-sort-${sortDirection === 'asc' ? 'up' : 'down'} ms-1`}></i>
+                            )}
+                          </th>
+                          <th 
+                            scope="col"
+                            rowSpan="2"
+                            style={{ cursor: 'pointer', verticalAlign: 'middle' }}
                             onClick={() => handleSort('source')}
                           >
                             Source
@@ -496,7 +557,8 @@ const EntryList = () => {
                             } : {}}
                           >
                             <td>{entry.oem_vendor || 'N/A'}</td>
-                            <td>{entry.source || 'N/A'}</td>
+                            <td>{entry.product_name || 'N/A'}</td>
+                            <td>{renderSourceLink(entry.source)}</td>
                             <td>
                               <span className={`badge ${getRiskBadgeClass(entry.risk_level)}`}>
                                 {entry.risk_level || 'Unknown'}
@@ -842,7 +904,7 @@ const EntryList = () => {
                       </div>
                       <div className="mb-3">
                         <label className="form-label fw-bold">Source:</label>
-                        <p className="mb-1">{viewingEntry.source || 'N/A'}</p>
+                        <p className="mb-1">{renderSourceLink(viewingEntry.source)}</p>
                       </div>
                       <div className="mb-3">
                         <label className="form-label fw-bold">Risk Level:</label>

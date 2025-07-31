@@ -60,6 +60,56 @@ const Dashboard = ({ user }) => {
     }
   };
 
+  const isValidUrl = (string) => {
+    try {
+      new URL(string);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  };
+
+  const renderSourceLink = (source) => {
+    if (!source || source === 'N/A') {
+      return 'N/A';
+    }
+    
+    // Handle common source patterns
+    if (source.toLowerCase().includes('cisa') || source.toLowerCase().includes('us-cert')) {
+      // If it's just "CISA" without URL, provide the main CISA link
+      if (source.toLowerCase() === 'cisa' || source.toLowerCase() === 'us-cert') {
+        return (
+          <a 
+            href="https://www.cisa.gov/known-exploited-vulnerabilities-catalog" 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className="text-decoration-none"
+            title="Open CISA Known Exploited Vulnerabilities Catalog"
+          >
+            CISA <i className="fas fa-external-link-alt ms-1 small"></i>
+          </a>
+        );
+      }
+    }
+    
+    if (isValidUrl(source)) {
+      return (
+        <a 
+          href={source} 
+          target="_blank" 
+          rel="noopener noreferrer"
+          className="text-decoration-none"
+          title="Open source link"
+        >
+          {source.length > 50 ? `${source.substring(0, 50)}...` : source}
+          <i className="fas fa-external-link-alt ms-1 small"></i>
+        </a>
+      );
+    }
+    
+    return source;
+  };
+
   if (loading) {
     return (
       <div className="container-fluid">
@@ -175,6 +225,7 @@ const Dashboard = ({ user }) => {
                     <thead>
                       <tr>
                         <th>OEM/Vendor</th>
+                        <th>Product Name</th>
                         <th>Source</th>
                         <th>Risk Level</th>
                         <th>CVE</th>
@@ -185,7 +236,8 @@ const Dashboard = ({ user }) => {
                       {recentEntries.map((entry, index) => (
                         <tr key={index}>
                           <td>{entry.oem_vendor || 'N/A'}</td>
-                          <td>{entry.source || 'N/A'}</td>
+                          <td>{entry.product_name || 'N/A'}</td>
+                          <td>{renderSourceLink(entry.source)}</td>
                           <td>
                             <span className={`badge ${getRiskBadgeClass(entry.risk_level)}`}>
                               {entry.risk_level || 'Unknown'}
