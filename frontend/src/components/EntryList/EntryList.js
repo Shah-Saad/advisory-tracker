@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import sheetService from '../../services/sheetService';
 import authService from '../../services/authService';
 
@@ -18,7 +18,9 @@ const EntryList = () => {
   const [viewingEntry, setViewingEntry] = useState(null);
   const [showViewModal, setShowViewModal] = useState(false);
   const [modalLoading, setModalLoading] = useState(false);
+  const [highlightedEntryId, setHighlightedEntryId] = useState(null);
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
   // State for conditional fields
   const [showSiteField, setShowSiteField] = useState({});
@@ -28,7 +30,42 @@ const EntryList = () => {
   useEffect(() => {
     loadEntries();
     loadCurrentUser();
-  }, []);
+    
+    // Check for highlight parameter in URL
+    const highlightId = searchParams.get('highlight');
+    if (highlightId) {
+      setHighlightedEntryId(parseInt(highlightId));
+      
+      // Show toast notification
+      const toastMessage = document.createElement('div');
+      toastMessage.className = 'alert alert-info alert-dismissible fade show position-fixed';
+      toastMessage.style.cssText = 'top: 20px; right: 20px; z-index: 9999; max-width: 350px;';
+      toastMessage.innerHTML = `
+        <strong>Entry Highlighted!</strong><br/>
+        Showing entry from notification. It will be highlighted for 10 seconds.
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+      `;
+      document.body.appendChild(toastMessage);
+      
+      // Remove toast after 5 seconds
+      setTimeout(() => {
+        if (toastMessage.parentNode) {
+          toastMessage.parentNode.removeChild(toastMessage);
+        }
+      }, 5000);
+      
+      // Scroll to highlighted entry after data loads
+      setTimeout(() => {
+        const entryElement = document.querySelector(`tr[data-entry-id="${highlightId}"]`);
+        if (entryElement) {
+          entryElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 1000);
+      
+      // Clear highlight after 10 seconds
+      setTimeout(() => setHighlightedEntryId(null), 10000);
+    }
+  }, [searchParams]);
 
   // Add escape key handler for modal
   useEffect(() => {
@@ -449,7 +486,15 @@ const EntryList = () => {
                       </thead>
                       <tbody>
                         {currentEntries.map((entry, index) => (
-                          <tr key={entry.id || index}>
+                          <tr 
+                            key={entry.id || index}
+                            data-entry-id={entry.id}
+                            className={highlightedEntryId === entry.id ? 'table-warning' : ''}
+                            style={highlightedEntryId === entry.id ? { 
+                              animation: 'pulse 2s infinite',
+                              boxShadow: '0 0 15px rgba(255, 193, 7, 0.6)'
+                            } : {}}
+                          >
                             <td>{entry.oem_vendor || 'N/A'}</td>
                             <td>{entry.source || 'N/A'}</td>
                             <td>
