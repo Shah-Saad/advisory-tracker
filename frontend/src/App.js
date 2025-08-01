@@ -15,7 +15,10 @@ import Filters from './components/Filters/Filters';
 import AdminUserManagement from './components/Admin/AdminUserManagement';
 import TeamManagement from './components/Admin/TeamManagement';
 import TeamSheetSwitcher from './components/Admin/TeamSheetSwitcher';
+import SheetAssignment from './components/Admin/SheetAssignment';
 import NotificationPanel from './components/Admin/NotificationPanel';
+import TeamSheets from './components/TeamSheets/TeamSheets';
+import TeamSheetEditor from './components/TeamSheets/TeamSheetEditor';
 import authService from './services/authService';
 
 import './App.css';
@@ -91,6 +94,12 @@ function App() {
                     <i className="fas fa-list me-1"></i>
                     Entries
                   </Link>
+                  {user && user.role !== 'admin' && (
+                    <Link className="nav-link text-white" to="/my-sheets">
+                      <i className="fas fa-file-alt me-1"></i>
+                      My Sheets
+                    </Link>
+                  )}
                   {user && user.role === 'admin' && (
                     <Link className="nav-link text-white" to="/admin/users">
                       <i className="fas fa-users-cog me-1"></i>
@@ -107,6 +116,12 @@ function App() {
                     <Link className="nav-link text-white" to="/admin/team-sheets">
                       <i className="fas fa-layer-group me-1"></i>
                       Team Sheets
+                    </Link>
+                  )}
+                  {user && user.role === 'admin' && (
+                    <Link className="nav-link text-white" to="/admin/sheet-assignment">
+                      <i className="fas fa-tasks me-1"></i>
+                      Assign Sheets
                     </Link>
                   )}
                 </div>
@@ -161,8 +176,16 @@ function App() {
               ) : (
                 <Routes>
                   <Route path="/dashboard" element={<Dashboard user={user} />} />
-                  <Route path="/upload" element={<SheetUpload />} />
+                  {user && user.role === 'admin' && (
+                    <Route path="/upload" element={<SheetUpload />} />
+                  )}
                   <Route path="/entries" element={<EntryList />} />
+                  {user && user.role !== 'admin' && (
+                    <Route path="/my-sheets" element={<TeamSheets user={user} />} />
+                  )}
+                  {user && user.role !== 'admin' && (
+                    <Route path="/team-sheets/:sheetId/edit" element={<TeamSheetEditor />} />
+                  )}
                   <Route path="/filters" element={<Filters />} />
                   {user && user.role === 'admin' && (
                     <Route path="/admin/users" element={<AdminUserManagement />} />
@@ -172,6 +195,9 @@ function App() {
                   )}
                   {user && user.role === 'admin' && (
                     <Route path="/admin/team-sheets" element={<TeamSheetSwitcher />} />
+                  )}
+                  {user && user.role === 'admin' && (
+                    <Route path="/admin/sheet-assignment" element={<SheetAssignment />} />
                   )}
                   <Route path="/" element={<Navigate to="/dashboard" />} />
                 </Routes>

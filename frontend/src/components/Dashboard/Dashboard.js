@@ -29,8 +29,25 @@ const Dashboard = ({ user }) => {
       const statsData = await sheetService.getStatistics();
       setStats(statsData);
 
-      // Load recent entries (limited)
-      const allEntries = await sheetService.getAllEntries();
+      // Load recent entries based on user role
+      let allEntries = [];
+      if (user?.role === 'admin') {
+        // Admin can see all entries
+        allEntries = await sheetService.getAllEntries();
+      } else {
+        // Team members only see entries from their assigned sheets
+        try {
+          const teamSheets = await sheetService.getMyTeamSheets();
+          if (teamSheets && teamSheets.length > 0) {
+            // For dashboard, we'll show recent entries from all their assigned sheets
+            // This would require a new endpoint, for now just show empty array
+            allEntries = [];
+          }
+        } catch (teamError) {
+          console.warn('Failed to load team sheets:', teamError);
+          allEntries = [];
+        }
+      }
       setRecentEntries(allEntries.slice(0, 5));
 
       // Load vendors and products
@@ -132,9 +149,11 @@ const Dashboard = ({ user }) => {
               <p className="text-muted">Welcome back, {user?.name || user?.email}</p>
             </div>
             <div>
-              <Link to="/upload" className="btn btn-primary me-2">
-                <i className="fas fa-upload me-2"></i>Upload Sheet
-              </Link>
+              {user?.role === 'admin' && (
+                <Link to="/upload" className="btn btn-primary me-2">
+                  <i className="fas fa-upload me-2"></i>Upload Sheet
+                </Link>
+              )}
               <Link to="/entries" className="btn btn-outline-primary">
                 <i className="fas fa-list me-2"></i>View All Entries
               </Link>

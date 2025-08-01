@@ -141,7 +141,9 @@ const EntryList = () => {
       vendor_contact_date: entry.vendor_contact_date || '',
       estimated_time: entry.estimated_time || '',
       estimated_completion_date: entry.estimated_completion_date || '',
-      estimated_time_option: entry.estimated_completion_date ? 'Date' : 'Not Applicable'
+      estimated_time_option: entry.estimated_completion_date ? 'Date' : 'Not Applicable',
+      current_status: entry.current_status || '',
+      comments: entry.comments || ''
     });
     
     // Initialize conditional field visibility
@@ -312,6 +314,30 @@ const EntryList = () => {
     }
   };
 
+  const getStatusBadgeClass = (status) => {
+    switch (status?.toLowerCase()) {
+      case 'completed':
+      case 'resolved':
+      case 'fixed':
+        return 'bg-success';
+      case 'in progress':
+      case 'in_progress':
+      case 'pending':
+        return 'bg-warning text-dark';
+      case 'open':
+      case 'new':
+        return 'bg-info';
+      case 'blocked':
+      case 'failed':
+        return 'bg-danger';
+      case 'not applicable':
+      case 'n/a':
+        return 'bg-secondary';
+      default:
+        return 'bg-light text-dark';
+    }
+  };
+
   const isValidUrl = (string) => {
     try {
       new URL(string);
@@ -324,6 +350,25 @@ const EntryList = () => {
   const renderSourceLink = (source) => {
     if (!source || source === 'N/A') {
       return 'N/A';
+    }
+    
+    // Handle hyperlink format from Excel: "text (url)"
+    const hyperlinkMatch = source.match(/^(.+?)\s*\((.+)\)$/);
+    if (hyperlinkMatch) {
+      const [, text, url] = hyperlinkMatch;
+      if (isValidUrl(url.trim())) {
+        return (
+          <a 
+            href={url.trim()} 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className="text-decoration-none"
+            title={`Open ${text.trim()}`}
+          >
+            {text.trim()} <i className="fas fa-external-link-alt ms-1 small"></i>
+          </a>
+        );
+      }
     }
     
     // Handle common source patterns
@@ -536,6 +581,18 @@ const EntryList = () => {
                           <th scope="col" colSpan="2" className="text-center" style={{ verticalAlign: 'middle' }}>Patching</th>
                           <th scope="col" rowSpan="2" style={{ verticalAlign: 'middle' }}>Vendor Contacted</th>
                           <th scope="col" rowSpan="2" style={{ verticalAlign: 'middle' }}>Compensatory Controls</th>
+                          <th 
+                            scope="col"
+                            rowSpan="2"
+                            style={{ cursor: 'pointer', verticalAlign: 'middle' }}
+                            onClick={() => handleSort('current_status')}
+                          >
+                            Status
+                            {sortField === 'current_status' && (
+                              <i className={`fas fa-sort-${sortDirection === 'asc' ? 'up' : 'down'} ms-1`}></i>
+                            )}
+                          </th>
+                          <th scope="col" rowSpan="2" style={{ verticalAlign: 'middle' }}>Comments</th>
                           <th scope="col" rowSpan="2" style={{ verticalAlign: 'middle' }}>Month/Year</th>
                           <th scope="col" rowSpan="2" style={{ verticalAlign: 'middle' }}>Actions</th>
                         </tr>
@@ -738,6 +795,36 @@ const EntryList = () => {
                                     )}
                                   </div>
                                 )
+                              )}
+                            </td>
+                            <td>
+                              {editingEntry === entry.id ? (
+                                <input
+                                  type="text"
+                                  className="form-control form-control-sm"
+                                  value={editForm.current_status || ''}
+                                  onChange={(e) => handleEditFormChange('current_status', e.target.value)}
+                                  placeholder="Status"
+                                />
+                              ) : (
+                                <span className={`badge ${getStatusBadgeClass(entry.current_status)}`}>
+                                  {entry.current_status || 'N/A'}
+                                </span>
+                              )}
+                            </td>
+                            <td>
+                              {editingEntry === entry.id ? (
+                                <textarea
+                                  className="form-control form-control-sm"
+                                  value={editForm.comments || ''}
+                                  onChange={(e) => handleEditFormChange('comments', e.target.value)}
+                                  placeholder="Comments"
+                                  rows="2"
+                                />
+                              ) : (
+                                <div className="text-truncate" style={{ maxWidth: '200px' }} title={entry.comments}>
+                                  {entry.comments || 'N/A'}
+                                </div>
                               )}
                             </td>
                             <td>
@@ -978,11 +1065,21 @@ const EntryList = () => {
                       </div>
                       <div className="mb-3">
                         <label className="form-label fw-bold">Current Status:</label>
-                        <p className="mb-1">{viewingEntry.current_status || 'N/A'}</p>
+                        <p className="mb-1">
+                          <span className={`badge ${getStatusBadgeClass(viewingEntry.current_status)}`}>
+                            {viewingEntry.current_status || 'N/A'}
+                          </span>
+                        </p>
                       </div>
                       <div className="mb-3">
-                        <label className="form-label fw-bold">Location:</label>
-                        <p className="mb-1">{viewingEntry.location || 'N/A'}</p>
+                        <label className="form-label fw-bold">Comments:</label>
+                        <p className="mb-1" style={{ whiteSpace: 'pre-wrap' }}>
+                          {viewingEntry.comments || 'N/A'}
+                        </p>
+                      </div>
+                      <div className="mb-3">
+                        <label className="form-label fw-bold">Site:</label>
+                        <p className="mb-1">{viewingEntry.site || 'N/A'}</p>
                       </div>
                     </div>
 
