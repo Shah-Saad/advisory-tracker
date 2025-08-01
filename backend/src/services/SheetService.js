@@ -102,6 +102,15 @@ class SheetService {
       }
     }
 
+    // Automatically distribute to all three teams (Generation, Distribution, Transmission)
+    try {
+      const assignments = await this.distributeToAllTeams(sheetRecord.id, createdBy);
+      console.log(`✅ Sheet ${sheetRecord.id} automatically distributed to all teams:`, assignments.length);
+    } catch (distributionError) {
+      console.error('Error auto-distributing sheet to teams:', distributionError.message);
+      // Don't fail the creation if distribution fails
+    }
+
     return {
       sheet: sheetRecord,
       fileData: processedFileData,

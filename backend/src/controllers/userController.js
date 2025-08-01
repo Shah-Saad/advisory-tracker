@@ -77,8 +77,14 @@ const userController = {
   // Login
   async login(req, res) {
     try {
-      const { email, password } = req.body;
-      const result = await UserService.authenticateUser(email, password);
+      const { username, email, password } = req.body;
+      const usernameOrEmail = username || email;
+      
+      if (!usernameOrEmail || !password) {
+        return res.status(400).json({ error: 'Username/email and password are required' });
+      }
+      
+      const result = await UserService.authenticateUser(usernameOrEmail, password);
       res.json(result);
     } catch (error) {
       let statusCode = 500;
@@ -95,6 +101,7 @@ const userController = {
       const permissions = await UserService.getUserPermissions(req.user.id);
       res.json({
         ...user,
+        role: user.role_name, // Add explicit role field for frontend compatibility
         permissions: permissions.map(p => p.name)
       });
     } catch (error) {

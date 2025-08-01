@@ -8,7 +8,7 @@ const TeamService = require('../services/TeamService');
 
 // Middleware to ensure only admins can access these routes
 router.use(requireAuth);
-router.use(requireRole('admin'));
+router.use(requireRole(['admin']));
 
 // Get all users
 router.get('/users', async (req, res) => {
@@ -32,12 +32,26 @@ router.get('/users', async (req, res) => {
 // Create a new user
 router.post('/users', async (req, res) => {
   try {
-    const { username, email, password, first_name, last_name, role, department, team } = req.body;
+    const { username, email, password, first_name, last_name, role, team } = req.body;
     
     // Validate required fields
     if (!username || !email || !password || !first_name || !last_name) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
+
+    // Map frontend role names to backend role names
+    const roleMapping = {
+      'user': 'team_member',
+      'manager': 'team_lead',
+      'admin': 'admin'
+    };
+    
+    // Map frontend team names to backend team names
+    const teamMapping = {
+      'generation': 'Generation',
+      'distribution': 'Distribution', 
+      'transmission': 'Transmission'
+    };
 
     const userData = {
       username,
@@ -45,10 +59,8 @@ router.post('/users', async (req, res) => {
       password,
       first_name,
       last_name,
-      role: role || 'user',
-      department,
-      team, // Include team assignment
-      created_by: req.user.id
+      role: roleMapping[role] || 'team_member',
+      team: team ? (teamMapping[team.toLowerCase()] || team) : undefined // Include team assignment with mapping
     };
 
     const newUser = await UserManagementService.createUser(userData, req.user.id);
@@ -200,6 +212,34 @@ router.post('/sheets/:sheetId/distribute-to-teams', async (req, res) => {
   }
 });
 
+// Assign sheet to specific users
+router.post('/sheets/:sheetId/assign-to-users', async (req, res) => {
+  try {
+    const { sheetId } = req.params;
+    const { userIds } = req.body;
+    const assignedBy = req.user.id;
+
+    if (!userIds || !Array.isArray(userIds) || userIds.length === 0) {
+      return res.status(400).json({ error: 'User IDs array is required' });
+    }
+
+    console.log(`Admin ${req.user.username} is assigning sheet ${sheetId} to users:`, userIds);
+
+    const result = await UserManagementService.assignSheetToUsers(parseInt(sheetId), userIds, assignedBy);
+    
+    res.json({
+      message: `Sheet successfully assigned to ${userIds.length} users`,
+      result
+    });
+  } catch (error) {
+    console.error('Error assigning sheet to users:', error);
+    let statusCode = 500;
+    if (error.message.includes('not found')) statusCode = 404;
+    else if (error.message.includes('No valid users')) statusCode = 400;
+    res.status(statusCode).json({ error: error.message });
+  }
+});
+
 // Get entries for admin monitoring across all teams
 router.get('/teams/monitoring', async (req, res) => {
   try {
@@ -230,7 +270,7 @@ router.get('/teams/:teamName/entries', async (req, res) => {
       deployed_in_ke: req.query.deployed_in_ke,
       page: parseInt(req.query.page) || 1,
       limit: parseInt(req.query.limit) || 50,
-      sortBy: req.query.sortBy || 'row_number',
+      sortBy: req.query.sortBy || 'id',
       sortOrder: req.query.sortOrder || 'asc'
     };
 

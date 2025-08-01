@@ -11,8 +11,9 @@ const requireAuth = async (req, res, next) => {
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     const user = await db('users')
-      .select('id', 'username', 'email', 'role', 'department', 'is_active')
-      .where('id', decoded.userId)
+      .select('users.id', 'users.username', 'users.email', 'roles.name as role', 'users.is_active', 'users.team_id')
+      .leftJoin('roles', 'users.role_id', 'roles.id')
+      .where('users.id', decoded.userId)
       .first();
     
     if (!user || !user.is_active) {

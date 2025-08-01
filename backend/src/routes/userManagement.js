@@ -17,7 +17,27 @@ router.get('/', requireAuth, requireRole(['admin', 'manager']), async (req, res)
 // Create new user (admin/manager only)
 router.post('/', requireAuth, requirePermission('create_users'), async (req, res) => {
   try {
-    const newUser = await UserManagementService.createUser(req.body, req.user.id);
+    // Map frontend role names to backend role names
+    const roleMapping = {
+      'user': 'team_member',
+      'manager': 'team_lead',
+      'admin': 'admin'
+    };
+    
+    // Map frontend team names to backend team names
+    const teamMapping = {
+      'generation': 'Generation',
+      'distribution': 'Distribution', 
+      'transmission': 'Transmission'
+    };
+    
+    const userData = {
+      ...req.body,
+      role: roleMapping[req.body.role] || 'team_member',
+      team: req.body.team ? (teamMapping[req.body.team.toLowerCase()] || req.body.team) : undefined
+    };
+    
+    const newUser = await UserManagementService.createUser(userData, req.user.id);
     res.status(201).json(newUser);
   } catch (error) {
     console.error('Error creating user:', error);
@@ -93,8 +113,21 @@ router.get('/:id/permissions', requireAuth, requireRole(['admin', 'manager']), a
 // Get available roles
 router.get('/roles', requireAuth, requireRole(['admin', 'manager']), async (req, res) => {
   try {
-    const roles = await UserManagementService.getRoles();
-    res.json(roles);
+    const backendRoles = await UserManagementService.getRoles();
+    
+    // Map backend role names to frontend role names
+    const roleMapping = {
+      'team_member': 'user',
+      'team_lead': 'manager', 
+      'admin': 'admin'
+    };
+    
+    const frontendRoles = backendRoles.map(role => ({
+      ...role,
+      name: roleMapping[role.name] || role.name
+    }));
+    
+    res.json(frontendRoles);
   } catch (error) {
     console.error('Error fetching roles:', error);
     res.status(500).json({ error: 'Failed to fetch roles' });
@@ -109,6 +142,30 @@ router.get('/permissions', requireAuth, requireRole(['admin', 'manager']), async
   } catch (error) {
     console.error('Error fetching permissions:', error);
     res.status(500).json({ error: 'Failed to fetch permissions' });
+  }
+});
+
+// Get available teams
+router.get('/teams', requireAuth, requireRole(['admin', 'manager']), async (req, res) => {
+  try {
+    const backendTeams = await UserManagementService.getTeams();
+    
+    // Map backend team names to frontend team names
+    const teamMapping = {
+      'Generation': 'generation',
+      'Distribution': 'distribution', 
+      'Transmission': 'transmission'
+    };
+    
+    const frontendTeams = backendTeams.map(team => ({
+      ...team,
+      name: teamMapping[team.name] || team.name.toLowerCase()
+    }));
+    
+    res.json(frontendTeams);
+  } catch (error) {
+    console.error('Error fetching teams:', error);
+    res.status(500).json({ error: 'Failed to fetch teams' });
   }
 });
 

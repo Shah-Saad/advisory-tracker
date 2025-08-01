@@ -19,7 +19,7 @@ class UserService {
   }
 
   static async createUser(userData, createdBy = null) {
-    const { password, role_id, ...otherData } = userData;
+    const { password, role, team, role_id, team_id, ...otherData } = userData;
     
     // Check if user already exists
     const existingUser = await User.findByEmail(userData.email);
@@ -27,10 +27,34 @@ class UserService {
       throw new Error('User with this email already exists');
     }
 
+    let finalRoleId = role_id;
+    let finalTeamId = team_id;
+
+    // If role name is provided instead of role_id, look it up
+    if (role && !role_id) {
+      const Role = require('../models/Role');
+      const roleRecord = await Role.findBy({ name: role });
+      if (roleRecord.length === 0) {
+        throw new Error(`Role '${role}' not found`);
+      }
+      finalRoleId = roleRecord[0].id;
+    }
+
+    // If team name is provided instead of team_id, look it up
+    if (team && !team_id) {
+      const Team = require('../models/Team');
+      const teamRecord = await Team.findBy({ name: team });
+      if (teamRecord.length === 0) {
+        throw new Error(`Team '${team}' not found`);
+      }
+      finalTeamId = teamRecord[0].id;
+    }
+
     // Verify role exists if provided
-    if (role_id) {
-      const role = await Role.findById(role_id);
-      if (!role) {
+    if (finalRoleId) {
+      const Role = require('../models/Role');
+      const roleRecord = await Role.findById(finalRoleId);
+      if (!roleRecord) {
         throw new Error('Role not found');
       }
     }
@@ -38,13 +62,20 @@ class UserService {
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 12);
     
-    const newUser = await User.create({
-      ...otherData,
-      role_id,
+    // Only pass valid database columns
+    const validUserData = {
+      username: otherData.username,
+      email: otherData.email,
+      first_name: otherData.first_name,
+      last_name: otherData.last_name,
+      department: otherData.department,
+      role_id: finalRoleId,
+      team_id: finalTeamId,
       password_hash: hashedPassword,
-      status: 'active',
-      created_by: createdBy
-    });
+      is_active: true
+    };
+
+    const newUser = await User.create(validUserData);
 
     // Return user without password
     return await this.getUserById(newUser.id);
@@ -97,8 +128,17 @@ class UserService {
     return await User.delete(id);
   }
 
-  static async authenticateUser(email, password) {
-    const user = await User.findByEmail(email);
+  static async authenticateUser(usernameOrEmail, password) {
+    // Try to find user by email first, then by username
+    let user = await User.findByEmail(usernameOrEmail);
+    if (!user) {
+      // Try finding by username
+      const users = await User.findBy({ username: usernameOrEmail });
+      if (users.length > 0) {
+        user = users[0];
+      }
+    }
+    
     if (!user) {
       throw new Error('Invalid credentials');
     }
@@ -136,6 +176,7 @@ class UserService {
       token,
       user: {
         ...userWithoutPassword,
+        role: userWithRole.role_name, // Add explicit role field for frontend compatibility
         permissions: permissions.map(p => p.name)
       }
     };

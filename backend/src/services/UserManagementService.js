@@ -5,29 +5,63 @@ const db = require('../config/db');
 class UserManagementService {
   static async createUser(userData, createdBy) {
     try {
-      const { username, email, password, first_name, last_name, role = 'user', department, team, created_by, permissions = [] } = userData;
+      const { username, email, password, first_name, last_name, role, team, role_id, team_id, permissions = [] } = userData;
       
       // Check if user already exists
       const existingUser = await db('users').where('email', email).orWhere('username', username).first();
       if (existingUser) {
         throw new Error('User with this email or username already exists');
       }
+
+      let finalRoleId = role_id;
+      let finalTeamId = team_id;
+
+      // If role name is provided instead of role_id, look it up
+      if (role && !role_id) {
+        const roleRecord = await db('roles').where('name', role).first();
+        if (!roleRecord) {
+          throw new Error(`Role '${role}' not found`);
+        }
+        finalRoleId = roleRecord.id;
+      }
+
+      // If team name is provided instead of team_id, look it up
+      if (team && !team_id) {
+        // Map frontend team names to backend team names
+        const teamMapping = {
+          'generation': 'Generation',
+          'distribution': 'Distribution', 
+          'transmission': 'Transmission'
+        };
+        
+        const mappedTeamName = teamMapping[team.toLowerCase()] || team;
+        
+        const teamRecord = await db('teams').where('name', mappedTeamName).first();
+        if (!teamRecord) {
+          // Default to 'Generation' team if specified team not found
+          console.warn(`Team '${team}' not found, defaulting to 'Generation' team`);
+          const defaultTeam = await db('teams').where('name', 'Generation').first();
+          if (defaultTeam) {
+            finalTeamId = defaultTeam.id;
+          }
+        } else {
+          finalTeamId = teamRecord.id;
+        }
+      }
       
       // Hash password
       const hashedPassword = await bcrypt.hash(password, 10);
       
-      // Insert user
+      // Insert user with only valid database columns
       const [newUserId] = await db('users').insert({
         username,
         email,
         password_hash: hashedPassword,
         first_name,
         last_name,
-        role,
-        department,
-        team, // Include team assignment
+        role_id: finalRoleId,
+        team_id: finalTeamId,
         is_active: true,
-        created_by: created_by || createdBy,
         created_at: new Date(),
         updated_at: new Date()
       }).returning('id');
@@ -40,7 +74,7 @@ class UserManagementService {
         const permissionRecords = permissions.map(permission => ({
           user_id: userId,
           permission,
-          granted_by: created_by || createdBy,
+          granted_by: createdBy,
           granted_at: new Date()
         }));
         
@@ -49,8 +83,9 @@ class UserManagementService {
       
       // Return user without password
       const newUser = await db('users')
-        .select('id', 'username', 'email', 'first_name', 'last_name', 'role', 'department', 'is_active', 'created_at')
-        .where('id', userId)
+        .select('users.id', 'users.username', 'users.email', 'users.first_name', 'users.last_name', 'roles.name as role', 'users.is_active', 'users.created_at')
+        .leftJoin('roles', 'users.role_id', 'roles.id')
+        .where('users.id', userId)
         .first();
         
       return newUser;
@@ -69,23 +104,42 @@ class UserManagementService {
           'users.email',
           'users.first_name',
           'users.last_name',
-          'users.role',
-          'users.department',
-          'users.team',
+          'roles.name as role',
+          'teams.name as team',
           'users.is_active',
           'users.last_login',
-          'users.created_at',
-          'creator.username as created_by_username'
+          'users.created_at'
         )
-        .leftJoin('users as creator', 'users.created_by', 'creator.id')
+        .leftJoin('roles', 'users.role_id', 'roles.id')
+        .leftJoin('teams', 'users.team_id', 'teams.id')
         .orderBy('users.created_at', 'desc');
         
-      // Get permissions for each user
+      // Map backend role names to frontend role names
+      const roleMapping = {
+        'team_member': 'user',
+        'team_lead': 'manager', 
+        'admin': 'admin'
+      };
+      
+      // Map backend team names to frontend team names
+      const teamMapping = {
+        'Generation': 'generation',
+        'Distribution': 'distribution', 
+        'Transmission': 'transmission'
+      };
+        
+      // Get permissions for each user and map role names
       for (let user of users) {
         const permissions = await db('user_permissions')
           .select('permission')
           .where('user_id', user.id);
         user.permissions = permissions.map(p => p.permission);
+        
+        // Map role name to frontend compatible name
+        user.role = roleMapping[user.role] || user.role;
+        
+        // Map team name to frontend compatible name
+        user.team = teamMapping[user.team] || user.team;
       }
       
       return users;
@@ -133,8 +187,9 @@ class UserManagementService {
       
       // Return updated user
       const updatedUser = await db('users')
-        .select('id', 'username', 'email', 'role', 'department', 'is_active', 'updated_at')
-        .where('id', userId)
+        .select('users.id', 'users.username', 'users.email', 'roles.name as role', 'users.is_active', 'users.updated_at')
+        .leftJoin('roles', 'users.role_id', 'roles.id')
+        .where('users.id', userId)
         .first();
         
       const userPermissions = await db('user_permissions')
@@ -245,14 +300,8 @@ class UserManagementService {
   
   static async getRoles() {
     try {
-      // Return predefined roles
-      return [
-        { name: 'admin', description: 'Full system access' },
-        { name: 'manager', description: 'Management access with user creation' },
-        { name: 'analyst', description: 'Read/write access to advisory data' },
-        { name: 'viewer', description: 'Read-only access' },
-        { name: 'user', description: 'Standard user access' }
-      ];
+      const roles = await db('roles').select('id', 'name', 'description').where('is_active', true);
+      return roles;
     } catch (error) {
       console.error('Error fetching roles:', error);
       throw error;
@@ -278,6 +327,122 @@ class UserManagementService {
       ];
     } catch (error) {
       console.error('Error fetching permissions:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Assign a sheet to specific users
+   * @param {number} sheetId - Sheet ID
+   * @param {Array} userIds - Array of user IDs to assign the sheet to
+   * @param {number} assignedBy - User ID who is making the assignment
+   * @returns {Object} Assignment results
+   */
+  static async assignSheetToUsers(sheetId, userIds, assignedBy) {
+    try {
+      console.log(`Assigning sheet ${sheetId} to users:`, userIds);
+      
+      // Verify the sheet exists
+      const sheet = await db('sheets').where('id', sheetId).first();
+      if (!sheet) {
+        throw new Error(`Sheet with ID ${sheetId} not found`);
+      }
+      
+      // Get valid users and their teams
+      const users = await db('users')
+        .select('users.id', 'users.username', 'users.team_id', 'teams.name as team_name')
+        .leftJoin('teams', 'users.team_id', 'teams.id')
+        .whereIn('users.id', userIds)
+        .where('users.is_active', true);
+      
+      if (users.length === 0) {
+        throw new Error('No valid users found for assignment');
+      }
+      
+      const assignments = [];
+      const teamSheetAssignments = new Map(); // Track team assignments to avoid duplicates
+      
+      for (const user of users) {
+        try {
+          // If user has a team, create team_sheet assignment (if not already exists)
+          if (user.team_id) {
+            if (!teamSheetAssignments.has(user.team_id)) {
+              const existingTeamAssignment = await db('team_sheets')
+                .where({
+                  sheet_id: sheetId,
+                  team_id: user.team_id
+                })
+                .first();
+              
+              if (!existingTeamAssignment) {
+                const [teamAssignment] = await db('team_sheets')
+                  .insert({
+                    sheet_id: sheetId,
+                    team_id: user.team_id,
+                    status: 'assigned',
+                    assigned_at: new Date(),
+                    created_at: new Date(),
+                    updated_at: new Date()
+                  })
+                  .returning('*');
+                
+                console.log(`Created team assignment for sheet ${sheetId} to team ${user.team_name}`);
+                teamSheetAssignments.set(user.team_id, teamAssignment);
+              } else {
+                console.log(`Sheet ${sheetId} already assigned to team ${user.team_name}`);
+                teamSheetAssignments.set(user.team_id, existingTeamAssignment);
+              }
+            }
+          }
+          
+          // Track the assignment for the user
+          assignments.push({
+            user_id: user.id,
+            username: user.username,
+            team_id: user.team_id,
+            team_name: user.team_name,
+            assigned_via_team: !!user.team_id
+          });
+          
+        } catch (assignmentError) {
+          console.error(`Error creating assignment for user ${user.username}:`, assignmentError.message);
+        }
+      }
+      
+      // Update the sheet status to distributed if it wasn't already
+      if (sheet.status !== 'distributed') {
+        await db('sheets')
+          .where('id', sheetId)
+          .update({
+            status: 'distributed',
+            distributed_at: new Date(),
+            updated_at: new Date()
+          });
+      }
+      
+      console.log(`Sheet ${sheetId} assigned to ${assignments.length} users across ${teamSheetAssignments.size} teams`);
+      
+      return {
+        success: true,
+        message: `Sheet assigned to ${assignments.length} users successfully`,
+        assignments: assignments,
+        usersAssigned: assignments.length,
+        teamsInvolved: teamSheetAssignments.size,
+        teamAssignments: Array.from(teamSheetAssignments.values())
+      };
+      
+    } catch (error) {
+      console.error('Error assigning sheet to users:', error);
+      throw new Error(`Failed to assign sheet to users: ${error.message}`);
+    }
+  }
+
+  static async getTeams() {
+    try {
+      const teams = await db('teams').select('id', 'name', 'description').where('is_active', true);
+      return teams;
+    } catch (error) {
+      console.error('Error fetching teams:', error);
       throw error;
     }
   }
