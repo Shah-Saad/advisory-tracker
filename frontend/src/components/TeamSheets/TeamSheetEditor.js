@@ -1,0 +1,275 @@
+import React, { useState, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import sheetService from '../../services/sheetService';
+import authService from '../../services/authService';
+
+const TeamSheetEditor = () => {
+  const { sheetId } = useParams();
+  const navigate = useNavigate();
+  const [sheet, setSheet] = useState(null);
+  const [entries, setEntries] = useState([]);
+  const [responses, setResponses] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+  const [user, setUser] = useState(null);
+
+  useEffect(() => {
+    loadSheetData();
+    setUser(authService.getCurrentUser());
+  }, [sheetId]);
+
+  const loadSheetData = async () => {
+    try {
+      setLoading(true);
+      setError('');
+      
+      // Get sheet entries
+      const entriesData = await sheetService.getSheetEntries(sheetId);
+      setEntries(entriesData);
+      
+      // Get sheet details from team sheets
+      const teamSheets = await sheetService.getMyTeamSheets();
+      const currentSheet = teamSheets.find(s => s.id === parseInt(sheetId));
+      setSheet(currentSheet);
+      
+      // Initialize responses object
+      const initialResponses = {};
+      entriesData.forEach(entry => {
+        initialResponses[entry.id] = {
+          current_status: entry.current_status || '',
+          comments: entry.comments || '',
+          date: entry.date || '',
+          deployed_in_ke: entry.deployed_in_ke || 'N'
+        };
+      });
+      setResponses(initialResponses);
+      
+    } catch (err) {
+      console.error('Failed to load sheet data:', err);
+      setError(err.message || 'Failed to load sheet data');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResponseChange = (entryId, field, value) => {
+    setResponses(prev => ({
+      ...prev,
+      [entryId]: {
+        ...prev[entryId],
+        [field]: value
+      }
+    }));
+  };
+
+  const handleSubmitSheet = async () => {
+    try {
+      setSubmitting(true);
+      setError('');
+      
+      // Submit the sheet with all responses
+      await sheetService.submitTeamSheet(sheetId, responses);
+      
+      // Show success message and navigate back
+      alert('Sheet submitted successfully!');
+      navigate('/my-sheets');
+      
+    } catch (err) {
+      console.error('Failed to submit sheet:', err);
+      setError(err.message || 'Failed to submit sheet');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleSaveDraft = async () => {
+    try {
+      // Update each entry individually
+      for (const entryId in responses) {
+        await sheetService.updateEntry(entryId, responses[entryId]);
+      }
+      alert('Draft saved successfully!');
+      await loadSheetData(); // Reload to show updated data
+    } catch (err) {
+      console.error('Failed to save draft:', err);
+      setError(err.message || 'Failed to save draft');
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="container-fluid p-4">
+        <div className="d-flex justify-content-center align-items-center" style={{ minHeight: '400px' }}>
+          <div className="spinner-border text-primary" role="status">
+            <span className="visually-hidden">Loading...</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!sheet) {
+    return (
+      <div className="container-fluid p-4">
+        <div className="alert alert-danger">
+          Sheet not found or you don't have access to it.
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="container-fluid p-4">
+      <div className="row">
+        <div className="col-12">
+          <div className="d-flex justify-content-between align-items-center mb-4">
+            <div>
+              <h1 className="h3 mb-0">Edit Team Sheet</h1>
+              <p className="text-muted">
+                {sheet.title} - {user?.team?.name || 'Your Team'}
+              </p>
+            </div>
+            <div className="d-flex gap-2">
+              <button 
+                className="btn btn-outline-secondary" 
+                onClick={() => navigate('/my-sheets')}
+              >
+                <i className="fas fa-arrow-left me-1"></i>
+                Back to Sheets
+              </button>
+              <button 
+                className="btn btn-outline-primary" 
+                onClick={handleSaveDraft}
+              >
+                <i className="fas fa-save me-1"></i>
+                Save Draft
+              </button>
+              <button 
+                className="btn btn-success" 
+                onClick={handleSubmitSheet}
+                disabled={submitting || sheet.assignment_status === 'completed'}
+              >
+                <i className="fas fa-paper-plane me-1"></i>
+                {submitting ? 'Submitting...' : 'Submit Sheet'}
+              </button>
+            </div>
+          </div>
+
+          {error && (
+            <div className="alert alert-danger alert-dismissible fade show" role="alert">
+              {error}
+              <button 
+                type="button" 
+                className="btn-close" 
+                onClick={() => setError('')}
+              ></button>
+            </div>
+          )}
+
+          {sheet.assignment_status === 'completed' && (
+            <div className="alert alert-success" role="alert">
+              <i className="fas fa-check-circle me-2"></i>
+              This sheet has been completed and submitted.
+            </div>
+          )}
+
+          {/* Entries Table */}
+          <div className="card">
+            <div className="card-header">
+              <h5 className="card-title mb-0">Sheet Entries</h5>
+            </div>
+            <div className="card-body p-0">
+              <div className="table-responsive">
+                <table className="table table-hover mb-0">
+                  <thead className="table-light">
+                    <tr>
+                      <th>Product Name</th>
+                      <th>Vendor</th>
+                      <th>Location</th>
+                      <th>Status</th>
+                      <th>Deployed in KE?</th>
+                      <th>Date</th>
+                      <th>Comments</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {entries.map((entry) => (
+                      <tr key={entry.id}>
+                        <td>
+                          <strong>{entry.product_name || 'N/A'}</strong>
+                          {entry.product_category && (
+                            <small className="d-block text-muted">
+                              {entry.product_category}
+                            </small>
+                          )}
+                        </td>
+                        <td>{entry.vendor_name || entry.oem_vendor || 'N/A'}</td>
+                        <td>{entry.location || 'N/A'}</td>
+                        <td>
+                          <select
+                            className="form-select form-select-sm"
+                            value={responses[entry.id]?.current_status || ''}
+                            onChange={(e) => handleResponseChange(entry.id, 'current_status', e.target.value)}
+                            disabled={sheet.assignment_status === 'completed'}
+                          >
+                            <option value="">Select Status</option>
+                            <option value="Not Started">Not Started</option>
+                            <option value="In Progress">In Progress</option>
+                            <option value="Completed">Completed</option>
+                            <option value="Blocked">Blocked</option>
+                            <option value="N/A">N/A</option>
+                          </select>
+                        </td>
+                        <td>
+                          <select
+                            className="form-select form-select-sm"
+                            value={responses[entry.id]?.deployed_in_ke || 'N'}
+                            onChange={(e) => handleResponseChange(entry.id, 'deployed_in_ke', e.target.value)}
+                            disabled={sheet.assignment_status === 'completed'}
+                          >
+                            <option value="Y">Yes</option>
+                            <option value="N">No</option>
+                          </select>
+                        </td>
+                        <td>
+                          <input
+                            type="date"
+                            className="form-control form-control-sm"
+                            value={responses[entry.id]?.date || ''}
+                            onChange={(e) => handleResponseChange(entry.id, 'date', e.target.value)}
+                            disabled={sheet.assignment_status === 'completed'}
+                          />
+                        </td>
+                        <td>
+                          <textarea
+                            className="form-control form-control-sm"
+                            rows="2"
+                            placeholder="Add comments..."
+                            value={responses[entry.id]?.comments || ''}
+                            onChange={(e) => handleResponseChange(entry.id, 'comments', e.target.value)}
+                            disabled={sheet.assignment_status === 'completed'}
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          {entries.length === 0 && (
+            <div className="text-center py-5">
+              <i className="fas fa-file-excel fa-3x text-muted mb-3"></i>
+              <h5 className="text-muted">No Entries Found</h5>
+              <p className="text-muted">This sheet doesn't have any entries yet.</p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default TeamSheetEditor;

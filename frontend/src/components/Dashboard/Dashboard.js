@@ -29,8 +29,25 @@ const Dashboard = ({ user }) => {
       const statsData = await sheetService.getStatistics();
       setStats(statsData);
 
-      // Load recent entries (limited)
-      const allEntries = await sheetService.getAllEntries();
+      // Load recent entries based on user role
+      let allEntries = [];
+      if (user?.role === 'admin') {
+        // Admin can see all entries
+        allEntries = await sheetService.getAllEntries();
+      } else {
+        // Team members only see entries from their assigned sheets
+        try {
+          const teamSheets = await sheetService.getMyTeamSheets();
+          if (teamSheets && teamSheets.length > 0) {
+            // For dashboard, we'll show recent entries from all their assigned sheets
+            // This would require a new endpoint, for now just show empty array
+            allEntries = [];
+          }
+        } catch (teamError) {
+          console.warn('Failed to load team sheets:', teamError);
+          allEntries = [];
+        }
+      }
       setRecentEntries(allEntries.slice(0, 5));
 
       // Load vendors and products
@@ -60,6 +77,56 @@ const Dashboard = ({ user }) => {
     }
   };
 
+  const isValidUrl = (string) => {
+    try {
+      new URL(string);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  };
+
+  const renderSourceLink = (source) => {
+    if (!source || source === 'N/A') {
+      return 'N/A';
+    }
+    
+    // Handle common source patterns
+    if (source.toLowerCase().includes('cisa') || source.toLowerCase().includes('us-cert')) {
+      // If it's just "CISA" without URL, provide the main CISA link
+      if (source.toLowerCase() === 'cisa' || source.toLowerCase() === 'us-cert') {
+        return (
+          <a 
+            href="https://www.cisa.gov/known-exploited-vulnerabilities-catalog" 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className="text-decoration-none"
+            title="Open CISA Known Exploited Vulnerabilities Catalog"
+          >
+            CISA <i className="fas fa-external-link-alt ms-1 small"></i>
+          </a>
+        );
+      }
+    }
+    
+    if (isValidUrl(source)) {
+      return (
+        <a 
+          href={source} 
+          target="_blank" 
+          rel="noopener noreferrer"
+          className="text-decoration-none"
+          title="Open source link"
+        >
+          {source.length > 50 ? `${source.substring(0, 50)}...` : source}
+          <i className="fas fa-external-link-alt ms-1 small"></i>
+        </a>
+      );
+    }
+    
+    return source;
+  };
+
   if (loading) {
     return (
       <div className="container-fluid">
@@ -82,9 +149,11 @@ const Dashboard = ({ user }) => {
               <p className="text-muted">Welcome back, {user?.name || user?.email}</p>
             </div>
             <div>
-              <Link to="/upload" className="btn btn-primary me-2">
-                <i className="fas fa-upload me-2"></i>Upload Sheet
-              </Link>
+              {user?.role === 'admin' && (
+                <Link to="/upload" className="btn btn-primary me-2">
+                  <i className="fas fa-upload me-2"></i>Upload Sheet
+                </Link>
+              )}
               <Link to="/entries" className="btn btn-outline-primary">
                 <i className="fas fa-list me-2"></i>View All Entries
               </Link>
@@ -175,6 +244,7 @@ const Dashboard = ({ user }) => {
                     <thead>
                       <tr>
                         <th>OEM/Vendor</th>
+                        <th>Product Name</th>
                         <th>Source</th>
                         <th>Risk Level</th>
                         <th>CVE</th>
@@ -185,7 +255,8 @@ const Dashboard = ({ user }) => {
                       {recentEntries.map((entry, index) => (
                         <tr key={index}>
                           <td>{entry.oem_vendor || 'N/A'}</td>
-                          <td>{entry.source || 'N/A'}</td>
+                          <td>{entry.product_name || 'N/A'}</td>
+                          <td>{renderSourceLink(entry.source)}</td>
                           <td>
                             <span className={`badge ${getRiskBadgeClass(entry.risk_level)}`}>
                               {entry.risk_level || 'Unknown'}

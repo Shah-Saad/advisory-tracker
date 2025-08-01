@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import sheetService from '../../services/sheetService';
 import authService from '../../services/authService';
 
@@ -18,7 +18,9 @@ const EntryList = () => {
   const [viewingEntry, setViewingEntry] = useState(null);
   const [showViewModal, setShowViewModal] = useState(false);
   const [modalLoading, setModalLoading] = useState(false);
+  const [highlightedEntryId, setHighlightedEntryId] = useState(null);
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
   // State for conditional fields
   const [showSiteField, setShowSiteField] = useState({});
@@ -28,7 +30,42 @@ const EntryList = () => {
   useEffect(() => {
     loadEntries();
     loadCurrentUser();
-  }, []);
+    
+    // Check for highlight parameter in URL
+    const highlightId = searchParams.get('highlight');
+    if (highlightId) {
+      setHighlightedEntryId(parseInt(highlightId));
+      
+      // Show toast notification
+      const toastMessage = document.createElement('div');
+      toastMessage.className = 'alert alert-info alert-dismissible fade show position-fixed';
+      toastMessage.style.cssText = 'top: 20px; right: 20px; z-index: 9999; max-width: 350px;';
+      toastMessage.innerHTML = `
+        <strong>Entry Highlighted!</strong><br/>
+        Showing entry from notification. It will be highlighted for 10 seconds.
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+      `;
+      document.body.appendChild(toastMessage);
+      
+      // Remove toast after 5 seconds
+      setTimeout(() => {
+        if (toastMessage.parentNode) {
+          toastMessage.parentNode.removeChild(toastMessage);
+        }
+      }, 5000);
+      
+      // Scroll to highlighted entry after data loads
+      setTimeout(() => {
+        const entryElement = document.querySelector(`tr[data-entry-id="${highlightId}"]`);
+        if (entryElement) {
+          entryElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 1000);
+      
+      // Clear highlight after 10 seconds
+      setTimeout(() => setHighlightedEntryId(null), 10000);
+    }
+  }, [searchParams]);
 
   // Add escape key handler for modal
   useEffect(() => {
@@ -104,7 +141,9 @@ const EntryList = () => {
       vendor_contact_date: entry.vendor_contact_date || '',
       estimated_time: entry.estimated_time || '',
       estimated_completion_date: entry.estimated_completion_date || '',
-      estimated_time_option: entry.estimated_completion_date ? 'Date' : 'Not Applicable'
+      estimated_time_option: entry.estimated_completion_date ? 'Date' : 'Not Applicable',
+      current_status: entry.current_status || '',
+      comments: entry.comments || ''
     });
     
     // Initialize conditional field visibility
@@ -275,6 +314,99 @@ const EntryList = () => {
     }
   };
 
+  const getStatusBadgeClass = (status) => {
+    switch (status?.toLowerCase()) {
+      case 'completed':
+      case 'resolved':
+      case 'fixed':
+        return 'bg-success';
+      case 'in progress':
+      case 'in_progress':
+      case 'pending':
+        return 'bg-warning text-dark';
+      case 'open':
+      case 'new':
+        return 'bg-info';
+      case 'blocked':
+      case 'failed':
+        return 'bg-danger';
+      case 'not applicable':
+      case 'n/a':
+        return 'bg-secondary';
+      default:
+        return 'bg-light text-dark';
+    }
+  };
+
+  const isValidUrl = (string) => {
+    try {
+      new URL(string);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  };
+
+  const renderSourceLink = (source) => {
+    if (!source || source === 'N/A') {
+      return 'N/A';
+    }
+    
+    // Handle hyperlink format from Excel: "text (url)"
+    const hyperlinkMatch = source.match(/^(.+?)\s*\((.+)\)$/);
+    if (hyperlinkMatch) {
+      const [, text, url] = hyperlinkMatch;
+      if (isValidUrl(url.trim())) {
+        return (
+          <a 
+            href={url.trim()} 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className="text-decoration-none"
+            title={`Open ${text.trim()}`}
+          >
+            {text.trim()} <i className="fas fa-external-link-alt ms-1 small"></i>
+          </a>
+        );
+      }
+    }
+    
+    // Handle common source patterns
+    if (source.toLowerCase().includes('cisa') || source.toLowerCase().includes('us-cert')) {
+      // If it's just "CISA" without URL, provide the main CISA link
+      if (source.toLowerCase() === 'cisa' || source.toLowerCase() === 'us-cert') {
+        return (
+          <a 
+            href="https://www.cisa.gov/known-exploited-vulnerabilities-catalog" 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className="text-decoration-none"
+            title="Open CISA Known Exploited Vulnerabilities Catalog"
+          >
+            CISA <i className="fas fa-external-link-alt ms-1 small"></i>
+          </a>
+        );
+      }
+    }
+    
+    if (isValidUrl(source)) {
+      return (
+        <a 
+          href={source} 
+          target="_blank" 
+          rel="noopener noreferrer"
+          className="text-decoration-none"
+          title="Open source link"
+        >
+          {source.length > 50 ? `${source.substring(0, 50)}...` : source}
+          <i className="fas fa-external-link-alt ms-1 small"></i>
+        </a>
+      );
+    }
+    
+    return source;
+  };
+
   // Filter and sort entries
   const filteredEntries = entries.filter(entry =>
     Object.values(entry).some(value =>
@@ -405,6 +537,17 @@ const EntryList = () => {
                             scope="col"
                             rowSpan="2"
                             style={{ cursor: 'pointer', verticalAlign: 'middle' }}
+                            onClick={() => handleSort('product_name')}
+                          >
+                            Product Name
+                            {sortField === 'product_name' && (
+                              <i className={`fas fa-sort-${sortDirection === 'asc' ? 'up' : 'down'} ms-1`}></i>
+                            )}
+                          </th>
+                          <th 
+                            scope="col"
+                            rowSpan="2"
+                            style={{ cursor: 'pointer', verticalAlign: 'middle' }}
                             onClick={() => handleSort('source')}
                           >
                             Source
@@ -438,6 +581,18 @@ const EntryList = () => {
                           <th scope="col" colSpan="2" className="text-center" style={{ verticalAlign: 'middle' }}>Patching</th>
                           <th scope="col" rowSpan="2" style={{ verticalAlign: 'middle' }}>Vendor Contacted</th>
                           <th scope="col" rowSpan="2" style={{ verticalAlign: 'middle' }}>Compensatory Controls</th>
+                          <th 
+                            scope="col"
+                            rowSpan="2"
+                            style={{ cursor: 'pointer', verticalAlign: 'middle' }}
+                            onClick={() => handleSort('current_status')}
+                          >
+                            Status
+                            {sortField === 'current_status' && (
+                              <i className={`fas fa-sort-${sortDirection === 'asc' ? 'up' : 'down'} ms-1`}></i>
+                            )}
+                          </th>
+                          <th scope="col" rowSpan="2" style={{ verticalAlign: 'middle' }}>Comments</th>
                           <th scope="col" rowSpan="2" style={{ verticalAlign: 'middle' }}>Month/Year</th>
                           <th scope="col" rowSpan="2" style={{ verticalAlign: 'middle' }}>Actions</th>
                         </tr>
@@ -449,9 +604,18 @@ const EntryList = () => {
                       </thead>
                       <tbody>
                         {currentEntries.map((entry, index) => (
-                          <tr key={entry.id || index}>
+                          <tr 
+                            key={entry.id || index}
+                            data-entry-id={entry.id}
+                            className={highlightedEntryId === entry.id ? 'table-warning' : ''}
+                            style={highlightedEntryId === entry.id ? { 
+                              animation: 'pulse 2s infinite',
+                              boxShadow: '0 0 15px rgba(255, 193, 7, 0.6)'
+                            } : {}}
+                          >
                             <td>{entry.oem_vendor || 'N/A'}</td>
-                            <td>{entry.source || 'N/A'}</td>
+                            <td>{entry.product_name || 'N/A'}</td>
+                            <td>{renderSourceLink(entry.source)}</td>
                             <td>
                               <span className={`badge ${getRiskBadgeClass(entry.risk_level)}`}>
                                 {entry.risk_level || 'Unknown'}
@@ -634,6 +798,36 @@ const EntryList = () => {
                               )}
                             </td>
                             <td>
+                              {editingEntry === entry.id ? (
+                                <input
+                                  type="text"
+                                  className="form-control form-control-sm"
+                                  value={editForm.current_status || ''}
+                                  onChange={(e) => handleEditFormChange('current_status', e.target.value)}
+                                  placeholder="Status"
+                                />
+                              ) : (
+                                <span className={`badge ${getStatusBadgeClass(entry.current_status)}`}>
+                                  {entry.current_status || 'N/A'}
+                                </span>
+                              )}
+                            </td>
+                            <td>
+                              {editingEntry === entry.id ? (
+                                <textarea
+                                  className="form-control form-control-sm"
+                                  value={editForm.comments || ''}
+                                  onChange={(e) => handleEditFormChange('comments', e.target.value)}
+                                  placeholder="Comments"
+                                  rows="2"
+                                />
+                              ) : (
+                                <div className="text-truncate" style={{ maxWidth: '200px' }} title={entry.comments}>
+                                  {entry.comments || 'N/A'}
+                                </div>
+                              )}
+                            </td>
+                            <td>
                               {entry.month && entry.year ? (
                                 <small>{entry.month} {entry.year}</small>
                               ) : (
@@ -797,7 +991,7 @@ const EntryList = () => {
                       </div>
                       <div className="mb-3">
                         <label className="form-label fw-bold">Source:</label>
-                        <p className="mb-1">{viewingEntry.source || 'N/A'}</p>
+                        <p className="mb-1">{renderSourceLink(viewingEntry.source)}</p>
                       </div>
                       <div className="mb-3">
                         <label className="form-label fw-bold">Risk Level:</label>
@@ -871,11 +1065,21 @@ const EntryList = () => {
                       </div>
                       <div className="mb-3">
                         <label className="form-label fw-bold">Current Status:</label>
-                        <p className="mb-1">{viewingEntry.current_status || 'N/A'}</p>
+                        <p className="mb-1">
+                          <span className={`badge ${getStatusBadgeClass(viewingEntry.current_status)}`}>
+                            {viewingEntry.current_status || 'N/A'}
+                          </span>
+                        </p>
                       </div>
                       <div className="mb-3">
-                        <label className="form-label fw-bold">Location:</label>
-                        <p className="mb-1">{viewingEntry.location || 'N/A'}</p>
+                        <label className="form-label fw-bold">Comments:</label>
+                        <p className="mb-1" style={{ whiteSpace: 'pre-wrap' }}>
+                          {viewingEntry.comments || 'N/A'}
+                        </p>
+                      </div>
+                      <div className="mb-3">
+                        <label className="form-label fw-bold">Site:</label>
+                        <p className="mb-1">{viewingEntry.site || 'N/A'}</p>
                       </div>
                     </div>
 
