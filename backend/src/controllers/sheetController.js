@@ -235,13 +235,22 @@ const sheetController = {
     }
   },
 
-  // Delete sheet (Admin only, only if not distributed)
+  // Delete sheet (Admin only, cascades to all related records)
   async deleteSheet(req, res) {
     try {
       const { id } = req.params;
-      await SheetService.deleteSheet(id);
-      res.status(204).send();
+      const result = await SheetService.deleteSheet(id);
+      
+      res.json({
+        message: 'Sheet and all related records deleted successfully',
+        details: {
+          sheetId: id,
+          deletedEntries: result.deletedEntries,
+          deletedTeamSheets: result.deletedTeamSheets
+        }
+      });
     } catch (error) {
+      console.error('Error deleting sheet:', error);
       let statusCode = 500;
       if (error.message === 'Sheet not found') statusCode = 404;
       else if (error.message.includes('distributed')) statusCode = 400;

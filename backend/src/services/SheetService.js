@@ -250,17 +250,48 @@ class SheetService {
   }
 
   static async deleteSheet(id) {
-    const existingSheet = await Sheet.findById(id);
-    if (!existingSheet) {
-      throw new Error('Sheet not found');
-    }
+    const db = require('../config/db');
+    
+    // Use a transaction to ensure all deletions succeed or fail together
+    return await db.transaction(async (trx) => {
+      const existingSheet = await Sheet.findById(id);
+      if (!existingSheet) {
+        throw new Error('Sheet not found');
+      }
 
-    // Don't allow deleting if sheet has been distributed
-    if (existingSheet.status === 'distributed') {
-      throw new Error('Cannot delete sheet that has been distributed');
-    }
+      // Check if sheet has been distributed to teams
+      const teamSheets = await trx('team_sheets').where('sheet_id', id);
+      if (teamSheets.length > 0) {
+        console.log(`Sheet ${id} has been distributed to ${teamSheets.length} teams, cleaning up...`);
+        
+        // Delete all sheet responses first (cascade should handle this, but explicit cleanup)
+        for (const teamSheet of teamSheets) {
+          await trx('sheet_responses').where('team_sheet_id', teamSheet.id).del();
+        }
+        
+        // Delete team sheet assignments
+        await trx('team_sheets').where('sheet_id', id).del();
+      }
 
-    return await Sheet.delete(id);
+      // Delete all sheet entries associated with this sheet
+      const deletedEntries = await trx('sheet_entries').where('sheet_id', id).del();
+      console.log(`Deleted ${deletedEntries} sheet entries for sheet ${id}`);
+
+      // Finally delete the main sheet record
+      const deletedCount = await trx('sheets').where('id', id).del();
+      
+      if (deletedCount === 0) {
+        throw new Error('Sheet could not be deleted');
+      }
+
+      console.log(`Successfully deleted sheet ${id} and all related records`);
+      return { 
+        success: true, 
+        deletedSheet: true,
+        deletedEntries,
+        deletedTeamSheets: teamSheets.length
+      };
+    });
   }
 
   static async getTeamSheetDetails(sheetId, teamId) {
