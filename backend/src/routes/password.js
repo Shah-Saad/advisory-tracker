@@ -138,9 +138,10 @@ router.put('/admin-change', requireAuth, requireRole(['admin']), async (req, res
 
     // Get current admin data
     const admin = await db('users')
-      .select('password_hash', 'username')
-      .where('id', adminId)
-      .where('role', 'admin')
+      .select('users.password_hash', 'users.username')
+      .join('roles', 'users.role_id', 'roles.id')
+      .where('users.id', adminId)
+      .where('roles.name', 'admin')
       .first();
 
     if (!admin) {

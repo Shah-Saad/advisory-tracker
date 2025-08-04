@@ -421,26 +421,9 @@ const TeamSubmissionTable = ({ sheetId }) => {
   };
 
   const handleViewTeamSheet = async (teamKey) => {
-    try {
-      setModalLoading(true);
-      setShowTeamModal(true);
-      
-      // Fetch detailed team sheet data
-      const detailedData = await sheetService.getTeamSheetData(sheetId, teamKey);
-      
-      setModalTeamData({
-        ...detailedData,
-        teamKey: teamKey,
-        teamName: teamKey.charAt(0).toUpperCase() + teamKey.slice(1)
-      });
-      
-    } catch (error) {
-      console.error('Error fetching team sheet data:', error);
-      toast.error('Failed to load team sheet data');
-      setShowTeamModal(false);
-    } finally {
-      setModalLoading(false);
-    }
+    // Open team sheet view in new tab
+    const url = `/admin/team-sheets/${sheetId}/${teamKey}`;
+    window.open(url, '_blank');
   };
 
   if (loading) {

@@ -698,9 +698,13 @@ class SheetEntryService {
           ];
           
           if (dateFields.includes(key)) {
+            console.log(`Processing date field ${key}: original value="${value}" (type: ${typeof value})`);
             // Convert empty strings to null for date fields
             if (value === '' || value === undefined || value === null) {
+              console.log(`  Converting to null`);
               value = null;
+            } else {
+              console.log(`  Keeping value: "${value}"`);
             }
           }
           

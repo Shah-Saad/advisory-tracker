@@ -36,7 +36,11 @@ class SheetResponse {
       .where('ts.team_id', teamId)
       .select(
         'sr.*',
-        'se.product_name as original_product_name',
+        'se.product_name',
+        'se.vendor_name',
+        'se.oem_vendor', 
+        'se.cve',
+        'se.risk_level as original_risk_level',
         'se.site as original_site',
         'ts.id as team_sheet_id'
       )

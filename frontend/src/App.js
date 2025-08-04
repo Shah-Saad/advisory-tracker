@@ -15,6 +15,7 @@ import Filters from './components/Filters/Filters';
 import AdminUserManagement from './components/Admin/AdminUserManagement';
 import TeamManagement from './components/Admin/TeamManagement';
 import TeamSheetSwitcher from './components/Admin/TeamSheetSwitcher';
+import AdminTeamSheetView from './components/Admin/AdminTeamSheetView';
 import NotificationPanel from './components/Admin/NotificationPanel';
 import TeamSheets from './components/TeamSheets/TeamSheets';
 import TeamSheetEditor from './components/TeamSheets/TeamSheetEditor';
@@ -79,20 +80,24 @@ function App() {
                 
                 {/* Navigation Links */}
                 <div className="navbar-nav me-auto">
-                  <Link className="nav-link text-white" to="/dashboard">
-                    <i className="fas fa-tachometer-alt me-1"></i>
-                    Dashboard
-                  </Link>
+                  {user && user.role === 'admin' && (
+                    <Link className="nav-link text-white" to="/dashboard">
+                      <i className="fas fa-tachometer-alt me-1"></i>
+                      Dashboard
+                    </Link>
+                  )}
                   {user && user.role === 'admin' && (
                     <Link className="nav-link text-white" to="/upload">
                       <i className="fas fa-upload me-1"></i>
                       Upload
                     </Link>
                   )}
-                  <Link className="nav-link text-white" to="/entries">
-                    <i className="fas fa-list me-1"></i>
-                    Entries
-                  </Link>
+                  {user && user.role === 'admin' && (
+                    <Link className="nav-link text-white" to="/entries">
+                      <i className="fas fa-list me-1"></i>
+                      Entries
+                    </Link>
+                  )}
                   {user && user.role !== 'admin' && (
                     <Link className="nav-link text-white" to="/my-sheets">
                       <i className="fas fa-file-alt me-1"></i>
@@ -189,7 +194,14 @@ function App() {
                   {user && user.role === 'admin' && (
                     <Route path="/admin/team-sheets" element={<TeamSheetSwitcher />} />
                   )}
-                  <Route path="/" element={<Navigate to="/dashboard" />} />
+                  {user && user.role === 'admin' && (
+                    <Route path="/admin/team-sheets/:sheetId/:teamKey" element={<AdminTeamSheetView />} />
+                  )}
+                  <Route path="/" element={
+                    user && user.role === 'admin' 
+                      ? <Navigate to="/dashboard" />
+                      : <Navigate to="/my-sheets" />
+                  } />
                 </Routes>
               )}
             </div>

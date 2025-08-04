@@ -20,12 +20,30 @@ const SheetUpload = () => {
   const [deletingSheet, setDeletingSheet] = useState(null);
   const navigate = useNavigate();
 
+  // Initialize month with current month
   useEffect(() => {
-    loadCurrentUser();
-    loadSheets();
+    if (!month) {
+      const currentMonth = new Date().getMonth();
+      const monthNames = [
+        'January', 'February', 'March', 'April', 'May', 'June',
+        'July', 'August', 'September', 'October', 'November', 'December'
+      ];
+      setMonth(monthNames[currentMonth]);
+    }
   }, []);
 
-  const loadCurrentUser = () => {
+  useEffect(() => {
+    loadCurrentUser();
+  }, []);
+
+  // Load sheets when currentUser changes and is available
+  useEffect(() => {
+    if (currentUser) {
+      loadSheets();
+    }
+  }, [currentUser]);
+
+  const loadCurrentUser = async () => {
     const user = authService.getCurrentUser();
     setCurrentUser(user);
   };
@@ -39,6 +57,7 @@ const SheetUpload = () => {
       setSheets(data);
     } catch (error) {
       console.error('Failed to load sheets:', error);
+      toast.error('Failed to load sheets');
     } finally {
       setLoadingSheets(false);
     }
@@ -60,8 +79,10 @@ const SheetUpload = () => {
   const handleFileChange = (e) => {
     const selectedFile = e.target.files[0];
     setFile(selectedFile);
+    // Clear previous messages when file changes
     setError('');
     setSuccess('');
+    setUploadResult(null);
   };
 
   const handleSubmit = async (e) => {
@@ -95,18 +116,26 @@ const SheetUpload = () => {
       
       setUploadResult(result);
       
-      // Reset form
+      // Reset only the file input, keep month/year selections
       setFile(null);
       const fileInput = document.getElementById('fileInput');
       if (fileInput) {
         fileInput.value = '';
       }
       
+      // Don't reset month/year as user might want to upload another file for the same period
+      
       // Reload sheets list
-      loadSheets();
+      await loadSheets();
+      
+      // Show success toast
+      toast.success(`Successfully uploaded ${result.processedCount} entries and distributed to all teams!`);
       
     } catch (error) {
-      setError(error.message || 'Upload failed');
+      console.error('Upload failed:', error);
+      const errorMessage = error.message || 'Upload failed. Please try again.';
+      setError(errorMessage);
+      toast.error(errorMessage);
     } finally {
       setUploading(false);
     }

@@ -146,7 +146,18 @@ const TeamSheetEditor = () => {
     try {
       // Update each entry individually
       for (const entryId in responses) {
-        await sheetService.updateEntry(entryId, responses[entryId]);
+        const responseData = responses[entryId];
+        console.log(`Saving draft for entry ${entryId}:`, responseData);
+        
+        // Log specific date fields
+        const dateFields = ['vendor_contact_date', 'patching_est_release_date', 'implementation_date'];
+        dateFields.forEach(field => {
+          if (responseData[field]) {
+            console.log(`  ${field}: "${responseData[field]}" (type: ${typeof responseData[field]})`);
+          }
+        });
+        
+        await sheetService.updateEntry(entryId, responseData);
       }
       alert('Draft saved successfully!');
       await loadSheetData(); // Reload to show updated data

@@ -96,8 +96,9 @@ class NotificationService {
     try {
       // Get all admin users
       const admins = await db('users')
-        .select('*')
-        .where('role', 'admin');
+        .select('users.*')
+        .join('roles', 'users.role_id', 'roles.id')
+        .where('roles.name', 'admin');
 
       for (const admin of admins) {
         // Create notification record
