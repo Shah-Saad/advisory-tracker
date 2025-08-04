@@ -663,19 +663,23 @@ class SheetEntryService {
         'product_name', 
         'location', 
         'status', 
+        'current_status',
         'deployed_in_ke', 
         'team', 
         'date', 
         'notes',
+        'comments',
         'patching',
         'patching_est_release_date',
         'implementation_date',
         'vendor_contacted',
         'compensatory_controls_provided',
+        'compensatory_controls_details',
         'site',
         'vendor_contact_date',
         'estimated_time',
-        'estimated_completion_date'
+        'estimated_completion_date',
+        'risk_level'
       ];
 
       // Filter update data to only allowed fields
