@@ -115,7 +115,6 @@ class SheetEntryService {
           
           const entry = {
             sheet_id: sheetId,
-            row_number: index + 1,
             created_at: new Date(),
             updated_at: new Date()
           };
@@ -338,7 +337,6 @@ class SheetEntryService {
             const entry = {
               sheet_id: sheetId,
               assigned_team: team,
-              row_number: index + 1,
               created_at: new Date(),
               updated_at: new Date()
             };
@@ -505,7 +503,7 @@ class SheetEntryService {
     try {
       const entries = await db('sheet_entries')
         .where('sheet_id', sheetId)
-        .orderBy('row_number', 'asc');
+        .orderBy('id', 'asc');
       
       return entries;
     } catch (error) {
@@ -524,7 +522,7 @@ class SheetEntryService {
           'sheets.month_year as sheet_month',
           'sheets.file_name as sheet_file'
         )
-        .orderBy(['sheets.month_year', 'sheet_entries.row_number']);
+        .orderBy(['sheets.month_year', 'sheet_entries.id']);
       
       return entries;
     } catch (error) {
@@ -601,7 +599,7 @@ class SheetEntryService {
         }
       });
       
-      const entries = await query.orderBy(['sheets.month_year', 'sheet_entries.row_number']);
+      const entries = await query.orderBy(['sheets.month_year', 'sheet_entries.id']);
       
       return entries;
     } catch (error) {
@@ -775,7 +773,7 @@ class SheetEntryService {
           'sheets.month_year as sheet_month'
         )
         .where('sheet_entries.sheet_id', sheetId)
-        .orderBy('sheet_entries.row_number', 'asc');
+        .orderBy('sheet_entries.id', 'asc');
 
       console.log(`Retrieved ${entries.length} entries for sheet ${sheetId}`);
       return entries;
@@ -896,7 +894,7 @@ class SheetEntryService {
       // Apply additional filters
       query = this.applyFilters(query, filters);
 
-      const entries = await query.orderBy('sheet_entries.row_number', 'asc');
+      const entries = await query.orderBy('sheet_entries.id', 'asc');
 
       console.log(`Retrieved ${entries.length} entries for team ${teamName}`);
       return entries;

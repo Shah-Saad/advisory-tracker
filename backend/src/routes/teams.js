@@ -53,7 +53,7 @@ router.get('/:teamName/entries', async (req, res) => {
       deployed_in_ke: req.query.deployed_in_ke,
       page: parseInt(req.query.page) || 1,
       limit: parseInt(req.query.limit) || 50,
-      sortBy: req.query.sortBy || 'row_number',
+      sortBy: req.query.sortBy || 'id',
       sortOrder: req.query.sortOrder || 'asc'
     };
 
