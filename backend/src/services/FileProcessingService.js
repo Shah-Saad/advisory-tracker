@@ -78,16 +78,33 @@ class FileProcessingService {
         return header;
       }).filter(header => header && header !== ''); // Remove empty headers
       
+      // Find Source column index for hyperlink extraction
+      const sourceColumnIndex = headers.findIndex(header => 
+        header && header.toLowerCase().includes('source')
+      );
+      
       // Fill in merged cells by propagating values down columns
-      const filledData = this.fillMergedCells(jsonData.slice(1), headers);
+      const filledData = this.fillMergedCells(jsonData.slice(1), headers, worksheet, sourceColumnIndex);
       
       // Process data rows
       const rows = filledData
         .filter(row => row && row.some(cell => cell !== undefined && cell !== '')) // Remove empty rows
-        .map(row => {
+        .map((row, rowIndex) => {
           const obj = {};
           headers.forEach((header, index) => {
             let value = row[index];
+            
+            // Handle hyperlinks in Source column
+            if (index === sourceColumnIndex && value) {
+              const cellAddress = XLSX.utils.encode_cell({ c: index, r: rowIndex + 1 }); // +1 for header row
+              const cell = worksheet[cellAddress];
+              
+              if (cell && cell.l && cell.l.Target) {
+                // Cell has a hyperlink, use the actual URL
+                value = cell.l.Target;
+                console.log(`Found hyperlink in row ${rowIndex + 2}: ${value}`);
+              }
+            }
             
             // Handle different data types
             if (value !== undefined && value !== null) {
@@ -136,12 +153,12 @@ class FileProcessingService {
   }
 
   // Helper method to fill merged cells
-  static fillMergedCells(dataRows, headers) {
+  static fillMergedCells(dataRows, headers, worksheet = null, sourceColumnIndex = -1) {
     // Columns that commonly have merged cells (vendor, product category, etc.)
+    // NOTE: Source column should NOT be treated as mergeable since each row has unique hyperlinks
     const mergeableColumns = [
       'OEM/Vendor', 
       'Vendor Name', 
-      'Source', 
       'Product Category',
       'Risk Level'
     ];
@@ -157,14 +174,17 @@ class FileProcessingService {
       }
     });
     
-    // Also add first few columns as they're often merged in Excel sheets
+    // Also add first few columns as they're often merged in Excel sheets, BUT exclude source column
     [0, 1, 2].forEach(idx => {
-      if (idx < headers.length && !mergeColumnIndices.includes(idx)) {
+      if (idx < headers.length && !mergeColumnIndices.includes(idx) && idx !== sourceColumnIndex) {
         mergeColumnIndices.push(idx);
       }
     });
     
     console.log('Checking columns for merged cells:', mergeColumnIndices.map(idx => headers[idx]));
+    if (sourceColumnIndex >= 0) {
+      console.log(`Source column (${headers[sourceColumnIndex]}) excluded from merge processing - preserving individual hyperlinks`);
+    }
     
     // Fill down empty cells in mergeable columns
     const filledData = [...dataRows];
