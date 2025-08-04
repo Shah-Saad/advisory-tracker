@@ -73,6 +73,20 @@ const TeamSheetEditor = () => {
         }
       };
 
+      // Auto-mark columns as "N/A" when "Deployed in KE?" is "No"
+      if (field === 'deployed_in_ke' && value === 'N') {
+        newResponses[entryId].site = 'N/A';
+        newResponses[entryId].current_status = 'N/A';
+        newResponses[entryId].vendor_contacted = 'N/A';
+        newResponses[entryId].vendor_contact_date = '';
+        newResponses[entryId].patching_est_release_date = '';
+        newResponses[entryId].implementation_date = '';
+        newResponses[entryId].compensatory_controls_provided = 'N/A';
+        newResponses[entryId].compensatory_controls_details = '';
+        newResponses[entryId].estimated_time = 'N/A';
+        newResponses[entryId].patching = 'N/A';
+      }
+
       // Clear related fields when parent field changes
       if (field === 'vendor_contacted' && value !== 'Y') {
         newResponses[entryId].vendor_contact_date = '';
@@ -88,6 +102,24 @@ const TeamSheetEditor = () => {
 
       return newResponses;
     });
+  };
+
+  // Helper function to check if a field should be disabled when "Deployed in KE?" is "No"
+  const isFieldDisabledWhenNotDeployed = (entryId, fieldName) => {
+    const isNotDeployed = responses[entryId]?.deployed_in_ke === 'N';
+    const fieldsToDisable = [
+      'site',
+      'current_status', 
+      'vendor_contacted', 
+      'vendor_contact_date', 
+      'patching_est_release_date', 
+      'implementation_date',
+      'compensatory_controls_provided', 
+      'compensatory_controls_details', 
+      'estimated_time', 
+      'patching'
+    ];
+    return isNotDeployed && fieldsToDisable.includes(fieldName);
   };
 
   const handleSubmitSheet = async () => {
@@ -201,6 +233,21 @@ const TeamSheetEditor = () => {
             </div>
           )}
 
+          {/* Help text for form behavior */}
+          <div className="alert alert-info" role="alert">
+            <i className="fas fa-info-circle me-2"></i>
+            <strong>Form Guidelines:</strong>
+            <ul className="mb-0 mt-2">
+              <li>When <strong>"Deployed in KE?"</strong> is set to <strong>"No"</strong>, all other fields will automatically be marked as "N/A"</li>
+              <li><strong>Risk Level</strong> and <strong>CVE</strong> are read-only and determined by the source data</li>
+              <li><strong>Location/Site</strong> field is only available when deployed in KE</li>
+              <li><strong>Vendor Contact Date</strong> appears only when "Vendor Contacted" is "Yes"</li>
+              <li><strong>Estimated Time</strong> appears only when "Compensatory Controls Provided" is "Yes"</li>
+              <li>Date fields will only appear when their prerequisite conditions are met</li>
+              <li>Use <strong>"Save Draft"</strong> to save your progress without submitting</li>
+            </ul>
+          </div>
+
           {/* Entries Table */}
           <div className="card">
             <div className="card-header">
@@ -211,27 +258,49 @@ const TeamSheetEditor = () => {
                 <table className="table table-hover mb-0">
                   <thead className="table-light">
                     <tr>
-                      <th>Product Name</th>
-                      <th>Vendor</th>
-                      <th>Location/Site</th>
-                      <th>Risk Level</th>
-                      <th>Status</th>
-                      <th>Deployed in KE?</th>
-                      <th>Vendor Contacted</th>
-                      <th>Vendor Contact Date</th>
-                      <th>Est. Release Date</th>
-                      <th>Implementation Date</th>
-                      <th>Compensatory Controls</th>
-                      <th>Control Details</th>
-                      <th>Estimated Time</th>
-                      <th>Patching Status</th>
-                      <th>Comments</th>
+                      <th style={{minWidth: '120px'}}>OEM/Vendor</th>
+                      <th style={{minWidth: '120px'}}>Product Name</th>
+                      <th style={{minWidth: '150px'}}>Source</th>
+                      <th style={{minWidth: '80px'}}>Risk Level</th>
+                      <th style={{minWidth: '100px'}}>CVE</th>
+                      <th style={{minWidth: '120px'}}>Deployed in KE</th>
+                      <th style={{minWidth: '200px'}}>Patching</th>
+                      <th style={{minWidth: '120px'}}>Vendor Contacted</th>
+                      <th style={{minWidth: '150px'}}>Compensatory Controls</th>
+                      <th style={{minWidth: '100px'}}>Status</th>
+                      <th style={{minWidth: '150px'}}>Comments</th>
+                      <th style={{minWidth: '100px'}}>Month/Year</th>
+                    </tr>
+                    <tr>
+                      <th></th>
+                      <th></th>
+                      <th></th>
+                      <th></th>
+                      <th></th>
+                      <th></th>
+                      <th style={{textAlign: 'center'}}>
+                        <div className="d-flex justify-content-around">
+                          <small>Est. Release Date</small>
+                          <small>Implementation Date</small>
+                        </div>
+                      </th>
+                      <th></th>
+                      <th></th>
+                      <th></th>
+                      <th></th>
+                      <th></th>
                     </tr>
                   </thead>
                   <tbody>
                     {entries.map((entry) => (
                       <tr key={entry.id}>
-                        <td>
+                        {/* OEM/Vendor */}
+                        <td style={{fontSize: '0.85rem'}}>
+                          <strong>{entry.vendor_name || entry.oem_vendor || 'N/A'}</strong>
+                        </td>
+                        
+                        {/* Product Name */}
+                        <td style={{fontSize: '0.85rem'}}>
                           <strong>{entry.product_name || 'N/A'}</strong>
                           {entry.product_category && (
                             <small className="d-block text-muted">
@@ -239,50 +308,41 @@ const TeamSheetEditor = () => {
                             </small>
                           )}
                         </td>
-                        <td>{entry.vendor_name || entry.oem_vendor || 'N/A'}</td>
-                        <td>
-                          <input
-                            type="text"
-                            className="form-control form-control-sm"
-                            value={responses[entry.id]?.site || entry.location || ''}
-                            onChange={(e) => handleResponseChange(entry.id, 'site', e.target.value)}
-                            disabled={sheet.assignment_status === 'completed'}
-                            placeholder="Location/Site"
-                          />
+                        
+                        {/* Source */}
+                        <td style={{fontSize: '0.85rem'}}>
+                          {entry.source ? (
+                            <a href={entry.source} target="_blank" rel="noopener noreferrer" className="text-primary">
+                              {entry.source.includes('cisa.gov') ? 'CISA Advisory' : 'Source Link'}
+                            </a>
+                          ) : (
+                            <span className="text-muted">N/A</span>
+                          )}
                         </td>
+                        
+                        {/* Risk Level */}
+                        <td>
+                          <span className={`badge ${
+                            entry.risk_level === 'Critical' ? 'bg-danger' :
+                            entry.risk_level === 'High' ? 'bg-warning text-dark' :
+                            entry.risk_level === 'Medium' ? 'bg-info' :
+                            entry.risk_level === 'Low' ? 'bg-success' :
+                            'bg-secondary'
+                          }`} style={{fontSize: '0.75rem'}}>
+                            {entry.risk_level || 'N/A'}
+                          </span>
+                        </td>
+                        
+                        {/* CVE */}
+                        <td style={{fontSize: '0.85rem'}}>
+                          <span className="text-muted">{entry.cve || 'N/A'}</span>
+                        </td>
+                        
+                        {/* Deployed in KE */}
                         <td>
                           <select
                             className="form-select form-select-sm"
-                            value={responses[entry.id]?.risk_level || entry.risk_level || ''}
-                            onChange={(e) => handleResponseChange(entry.id, 'risk_level', e.target.value)}
-                            disabled={sheet.assignment_status === 'completed'}
-                          >
-                            <option value="">Select Risk</option>
-                            <option value="Critical">Critical</option>
-                            <option value="High">High</option>
-                            <option value="Medium">Medium</option>
-                            <option value="Low">Low</option>
-                            <option value="N/A">N/A</option>
-                          </select>
-                        </td>
-                        <td>
-                          <select
-                            className="form-select form-select-sm"
-                            value={responses[entry.id]?.current_status || ''}
-                            onChange={(e) => handleResponseChange(entry.id, 'current_status', e.target.value)}
-                            disabled={sheet.assignment_status === 'completed'}
-                          >
-                            <option value="">Select Status</option>
-                            <option value="Not Started">Not Started</option>
-                            <option value="In Progress">In Progress</option>
-                            <option value="Completed">Completed</option>
-                            <option value="Blocked">Blocked</option>
-                            <option value="N/A">N/A</option>
-                          </select>
-                        </td>
-                        <td>
-                          <select
-                            className="form-select form-select-sm"
+                            style={{fontSize: '0.85rem'}}
                             value={responses[entry.id]?.deployed_in_ke || 'N'}
                             onChange={(e) => handleResponseChange(entry.id, 'deployed_in_ke', e.target.value)}
                             disabled={sheet.assignment_status === 'completed'}
@@ -290,115 +350,169 @@ const TeamSheetEditor = () => {
                             <option value="Y">Yes</option>
                             <option value="N">No</option>
                           </select>
-                        </td>
-                        <td>
-                          <select
-                            className="form-select form-select-sm"
-                            value={responses[entry.id]?.vendor_contacted || ''}
-                            onChange={(e) => handleResponseChange(entry.id, 'vendor_contacted', e.target.value)}
-                            disabled={sheet.assignment_status === 'completed'}
-                          >
-                            <option value="">Select</option>
-                            <option value="Y">Yes</option>
-                            <option value="N">No</option>
-                            <option value="N/A">N/A</option>
-                          </select>
-                        </td>
-                        <td>
-                          {responses[entry.id]?.vendor_contacted === 'Y' ? (
+                          {responses[entry.id]?.deployed_in_ke === 'Y' && (
                             <input
-                              type="date"
-                              className="form-control form-control-sm"
-                              value={responses[entry.id]?.vendor_contact_date || ''}
-                              onChange={(e) => handleResponseChange(entry.id, 'vendor_contact_date', e.target.value)}
+                              type="text"
+                              className="form-control form-control-sm mt-1"
+                              value={responses[entry.id]?.site || entry.location || ''}
+                              onChange={(e) => handleResponseChange(entry.id, 'site', e.target.value)}
                               disabled={sheet.assignment_status === 'completed'}
+                              placeholder="Site"
+                              style={{fontSize: '0.8rem'}}
                             />
-                          ) : (
-                            <span className="text-muted small">Select "Yes" in Vendor Contacted</span>
                           )}
                         </td>
+                        
+                        {/* Patching (Est. Release Date & Implementation Date) */}
                         <td>
-                          {responses[entry.id]?.vendor_contacted === 'Y' || responses[entry.id]?.current_status === 'In Progress' ? (
-                            <input
-                              type="date"
-                              className="form-control form-control-sm"
-                              value={responses[entry.id]?.patching_est_release_date || ''}
-                              onChange={(e) => handleResponseChange(entry.id, 'patching_est_release_date', e.target.value)}
-                              disabled={sheet.assignment_status === 'completed'}
-                            />
+                          <div className="d-flex gap-1">
+                            <div className="flex-fill">
+                              {responses[entry.id]?.deployed_in_ke === 'N' ? (
+                                <span className="text-muted small">N/A</span>
+                              ) : (responses[entry.id]?.vendor_contacted === 'Y' || responses[entry.id]?.current_status === 'In Progress') ? (
+                                <input
+                                  type="date"
+                                  className="form-control form-control-sm"
+                                  value={responses[entry.id]?.patching_est_release_date || ''}
+                                  onChange={(e) => handleResponseChange(entry.id, 'patching_est_release_date', e.target.value)}
+                                  disabled={sheet.assignment_status === 'completed'}
+                                  style={{fontSize: '0.75rem'}}
+                                />
+                              ) : (
+                                <span className="text-muted small">Date</span>
+                              )}
+                            </div>
+                            <div className="flex-fill">
+                              {responses[entry.id]?.deployed_in_ke === 'N' ? (
+                                <span className="text-muted small">N/A</span>
+                              ) : ['In Progress', 'Completed', 'Blocked'].includes(responses[entry.id]?.current_status) ? (
+                                <input
+                                  type="date"
+                                  className="form-control form-control-sm"
+                                  value={responses[entry.id]?.implementation_date || ''}
+                                  onChange={(e) => handleResponseChange(entry.id, 'implementation_date', e.target.value)}
+                                  disabled={sheet.assignment_status === 'completed'}
+                                  style={{fontSize: '0.75rem'}}
+                                />
+                              ) : (
+                                <span className="text-muted small">Date</span>
+                              )}
+                            </div>
+                          </div>
+                        </td>
+                        
+                        {/* Vendor Contacted */}
+                        <td>
+                          {responses[entry.id]?.deployed_in_ke === 'N' ? (
+                            <span className="text-muted">N/A</span>
                           ) : (
-                            <span className="text-muted small">Contact vendor or set status to In Progress</span>
+                            <>
+                              <select
+                                className="form-select form-select-sm"
+                                style={{fontSize: '0.85rem'}}
+                                value={responses[entry.id]?.vendor_contacted || ''}
+                                onChange={(e) => handleResponseChange(entry.id, 'vendor_contacted', e.target.value)}
+                                disabled={sheet.assignment_status === 'completed'}
+                              >
+                                <option value="">Select</option>
+                                <option value="Y">Yes</option>
+                                <option value="N">No</option>
+                              </select>
+                              {responses[entry.id]?.vendor_contacted === 'Y' && (
+                                <input
+                                  type="date"
+                                  className="form-control form-control-sm mt-1"
+                                  value={responses[entry.id]?.vendor_contact_date || ''}
+                                  onChange={(e) => handleResponseChange(entry.id, 'vendor_contact_date', e.target.value)}
+                                  disabled={sheet.assignment_status === 'completed'}
+                                  style={{fontSize: '0.75rem'}}
+                                />
+                              )}
+                            </>
                           )}
                         </td>
+                        
+                        {/* Compensatory Controls */}
                         <td>
-                          {['In Progress', 'Completed', 'Blocked'].includes(responses[entry.id]?.current_status) ? (
-                            <input
-                              type="date"
-                              className="form-control form-control-sm"
-                              value={responses[entry.id]?.implementation_date || ''}
-                              onChange={(e) => handleResponseChange(entry.id, 'implementation_date', e.target.value)}
-                              disabled={sheet.assignment_status === 'completed'}
-                            />
+                          {responses[entry.id]?.deployed_in_ke === 'N' ? (
+                            <span className="text-muted">N/A</span>
                           ) : (
-                            <span className="text-muted small">Set status to In Progress, Completed, or Blocked</span>
+                            <>
+                              <select
+                                className="form-select form-select-sm"
+                                style={{fontSize: '0.85rem'}}
+                                value={responses[entry.id]?.compensatory_controls_provided || ''}
+                                onChange={(e) => handleResponseChange(entry.id, 'compensatory_controls_provided', e.target.value)}
+                                disabled={sheet.assignment_status === 'completed'}
+                              >
+                                <option value="">Select</option>
+                                <option value="Y">Yes</option>
+                                <option value="N">No</option>
+                                <option value="N/A">Not Applicable</option>
+                              </select>
+                              {responses[entry.id]?.compensatory_controls_provided === 'Y' && (
+                                <>
+                                  <textarea
+                                    className="form-control form-control-sm mt-1"
+                                    rows="1"
+                                    placeholder="Control details..."
+                                    value={responses[entry.id]?.compensatory_controls_details || ''}
+                                    onChange={(e) => handleResponseChange(entry.id, 'compensatory_controls_details', e.target.value)}
+                                    disabled={sheet.assignment_status === 'completed'}
+                                    style={{fontSize: '0.75rem'}}
+                                  />
+                                  <input
+                                    type="text"
+                                    className="form-control form-control-sm mt-1"
+                                    placeholder="Est. time"
+                                    value={responses[entry.id]?.estimated_time || ''}
+                                    onChange={(e) => handleResponseChange(entry.id, 'estimated_time', e.target.value)}
+                                    disabled={sheet.assignment_status === 'completed'}
+                                    style={{fontSize: '0.75rem'}}
+                                  />
+                                </>
+                              )}
+                            </>
                           )}
                         </td>
+                        
+                        {/* Status */}
                         <td>
-                          <select
-                            className="form-select form-select-sm"
-                            value={responses[entry.id]?.compensatory_controls_provided || ''}
-                            onChange={(e) => handleResponseChange(entry.id, 'compensatory_controls_provided', e.target.value)}
-                            disabled={sheet.assignment_status === 'completed'}
-                          >
-                            <option value="">Select</option>
-                            <option value="Y">Yes</option>
-                            <option value="N">No</option>
-                            <option value="N/A">N/A</option>
-                          </select>
-                        </td>
-                        <td>
-                          {responses[entry.id]?.compensatory_controls_provided === 'Y' ? (
-                            <textarea
-                              className="form-control form-control-sm"
-                              rows="2"
-                              placeholder="Control details..."
-                              value={responses[entry.id]?.compensatory_controls_details || ''}
-                              onChange={(e) => handleResponseChange(entry.id, 'compensatory_controls_details', e.target.value)}
-                              disabled={sheet.assignment_status === 'completed'}
-                            />
+                          {responses[entry.id]?.deployed_in_ke === 'N' ? (
+                            <span className="text-muted">N/A</span>
                           ) : (
-                            <span className="text-muted small">Select "Yes" in Compensatory Controls</span>
+                            <select
+                              className="form-select form-select-sm"
+                              style={{fontSize: '0.85rem'}}
+                              value={responses[entry.id]?.current_status || ''}
+                              onChange={(e) => handleResponseChange(entry.id, 'current_status', e.target.value)}
+                              disabled={sheet.assignment_status === 'completed'}
+                            >
+                              <option value="">Select Status</option>
+                              <option value="Not Started">Not Started</option>
+                              <option value="In Progress">In Progress</option>
+                              <option value="Completed">Completed</option>
+                              <option value="Blocked">Blocked</option>
+                            </select>
                           )}
                         </td>
-                        <td>
-                          <input
-                            type="text"
-                            className="form-control form-control-sm"
-                            placeholder="Est. time"
-                            value={responses[entry.id]?.estimated_time || ''}
-                            onChange={(e) => handleResponseChange(entry.id, 'estimated_time', e.target.value)}
-                            disabled={sheet.assignment_status === 'completed'}
-                          />
-                        </td>
+                        
+                        {/* Comments */}
                         <td>
                           <textarea
                             className="form-control form-control-sm"
-                            rows="2"
-                            placeholder="Patching status..."
-                            value={responses[entry.id]?.patching || ''}
-                            onChange={(e) => handleResponseChange(entry.id, 'patching', e.target.value)}
-                            disabled={sheet.assignment_status === 'completed'}
-                          />
-                        </td>
-                        <td>
-                          <textarea
-                            className="form-control form-control-sm"
-                            rows="2"
-                            placeholder="Add comments..."
+                            rows="1"
+                            placeholder="Comments"
                             value={responses[entry.id]?.comments || ''}
                             onChange={(e) => handleResponseChange(entry.id, 'comments', e.target.value)}
                             disabled={sheet.assignment_status === 'completed'}
+                            style={{fontSize: '0.75rem'}}
                           />
+                        </td>
+                        
+                        {/* Month/Year */}
+                        <td style={{fontSize: '0.85rem'}}>
+                          <span className="text-muted">N/A</span>
                         </td>
                       </tr>
                     ))}
