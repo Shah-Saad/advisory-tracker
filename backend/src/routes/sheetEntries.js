@@ -64,33 +64,14 @@ router.post('/upload', auth, uploadMiddleware, async (req, res) => {
             templateFields: sheetResult.templateFields ? sheetResult.templateFields.length : 0
         });
         
-        // Check if admin wants to distribute to teams automatically
-        const distributeToTeams = req.body.distributeToTeams === 'true' || req.body.distributeToTeams === true;
-        
-        if (distributeToTeams) {
-            console.log('Distributing sheet to all teams automatically');
-            
-            // Use SheetService to distribute to all teams
-            const assignments = await SheetService.distributeToAllTeams(sheetId, req.user.id);
-            console.log('Sheet distributed to teams successfully:', assignments);
-
-            res.json({
-                message: 'File uploaded and distributed to all teams successfully',
-                sheet: sheetResult.sheet,
-                assignments: assignments,
-                processedCount: sheetResult.fileData ? sheetResult.fileData.totalRows : 0,
-                totalRows: sheetResult.fileData ? sheetResult.fileData.totalRows : 0,
-                headers: sheetResult.fileData ? sheetResult.fileData.headers : []
-            });
-        } else {
-            res.json({
-                message: 'Sheet created successfully',
-                sheet: sheetResult.sheet,
-                processedCount: sheetResult.fileData ? sheetResult.fileData.totalRows : 0,
-                totalRows: sheetResult.fileData ? sheetResult.fileData.totalRows : 0,
-                headers: sheetResult.fileData ? sheetResult.fileData.headers : []
-            });
-        }
+        // Sheet is automatically distributed to all teams in SheetService.uploadFileToSheet
+        res.json({
+            message: 'File uploaded and distributed to all teams successfully',
+            sheet: sheetResult.sheet,
+            processedCount: sheetResult.fileData ? sheetResult.fileData.totalRows : 0,
+            totalRows: sheetResult.fileData ? sheetResult.fileData.totalRows : 0,
+            headers: sheetResult.fileData ? sheetResult.fileData.headers : []
+        });
     } catch (error) {
         console.error('Error uploading file:', error);
         res.status(500).json({ 

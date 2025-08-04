@@ -29,16 +29,20 @@ class SheetResponse {
   }
 
   static async findByTeamSheet(sheetId, teamId) {
-    const result = await db.query(`
-      SELECT sr.*, se.product_name as original_product_name, se.site as original_site,
-             ts.id as team_sheet_id
-      FROM sheet_responses sr
-      JOIN sheet_entries se ON sr.original_entry_id = se.id
-      JOIN team_sheets ts ON sr.team_sheet_id = ts.id
-      WHERE ts.sheet_id = $1 AND ts.team_id = $2
-      ORDER BY sr.id
-    `, [sheetId, teamId]);
-    return result.rows;
+    const results = await db('sheet_responses as sr')
+      .join('sheet_entries as se', 'sr.original_entry_id', 'se.id')
+      .join('team_sheets as ts', 'sr.team_sheet_id', 'ts.id')
+      .where('ts.sheet_id', sheetId)
+      .where('ts.team_id', teamId)
+      .select(
+        'sr.*',
+        'se.product_name as original_product_name',
+        'se.site as original_site',
+        'ts.id as team_sheet_id'
+      )
+      .orderBy('sr.id');
+    
+    return results;
   }
 
   static async create(responseData) {

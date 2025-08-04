@@ -78,8 +78,11 @@ class FileProcessingService {
         return header;
       }).filter(header => header && header !== ''); // Remove empty headers
       
+      // Fill in merged cells by propagating values down columns
+      const filledData = this.fillMergedCells(jsonData.slice(1), headers);
+      
       // Process data rows
-      const rows = jsonData.slice(1)
+      const rows = filledData
         .filter(row => row && row.some(cell => cell !== undefined && cell !== '')) // Remove empty rows
         .map(row => {
           const obj = {};
@@ -118,14 +121,78 @@ class FileProcessingService {
           return obj;
         });
       
-      console.log(`Processed Excel file: ${headers.length} columns, ${rows.length} rows`);
+      console.log(`Processed Excel file: ${headers.length} columns, ${rows.length + 1} rows`);
       console.log('Headers found:', headers);
       
-      return { headers, rows };
+      return {
+        headers,
+        rows,
+        totalRows: rows.length + 1 // Include header row in count
+      };
     } catch (error) {
-      console.error('Excel processing error:', error);
-      throw new Error(`Excel processing failed: ${error.message}`);
+      console.error('Error processing Excel file:', error);
+      throw new Error(`Failed to process Excel file: ${error.message}`);
     }
+  }
+
+  // Helper method to fill merged cells
+  static fillMergedCells(dataRows, headers) {
+    // Columns that commonly have merged cells (vendor, product category, etc.)
+    const mergeableColumns = [
+      'OEM/Vendor', 
+      'Vendor Name', 
+      'Source', 
+      'Product Category',
+      'Risk Level'
+    ];
+    
+    // Get column indices for mergeable columns
+    const mergeColumnIndices = [];
+    mergeableColumns.forEach(colName => {
+      const index = headers.findIndex(header => 
+        header && header.toLowerCase().includes(colName.toLowerCase())
+      );
+      if (index >= 0) {
+        mergeColumnIndices.push(index);
+      }
+    });
+    
+    // Also add first few columns as they're often merged in Excel sheets
+    [0, 1, 2].forEach(idx => {
+      if (idx < headers.length && !mergeColumnIndices.includes(idx)) {
+        mergeColumnIndices.push(idx);
+      }
+    });
+    
+    console.log('Checking columns for merged cells:', mergeColumnIndices.map(idx => headers[idx]));
+    
+    // Fill down empty cells in mergeable columns
+    const filledData = [...dataRows];
+    
+    for (let colIndex of mergeColumnIndices) {
+      let lastValue = null;
+      
+      for (let rowIndex = 0; rowIndex < filledData.length; rowIndex++) {
+        const currentValue = filledData[rowIndex][colIndex];
+        
+        if (currentValue && String(currentValue).trim() !== '') {
+          // Update last known value
+          lastValue = currentValue;
+        } else if (lastValue && (!currentValue || String(currentValue).trim() === '')) {
+          // Fill empty cell with last known value
+          filledData[rowIndex][colIndex] = lastValue;
+          console.log(`Filled row ${rowIndex + 2}, column ${headers[colIndex]} with: "${lastValue}"`);
+        }
+      }
+    }
+    
+    return filledData;
+  }
+
+  // Process CSV file
+  static async processCSV(filePath) {
+    // Existing CSV processing logic would go here
+    throw new Error('CSV processing not yet implemented');
   }
   
   // Extract template fields from headers for form generation

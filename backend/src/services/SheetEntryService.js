@@ -914,22 +914,25 @@ class SheetEntryService {
    */
   static async getAllTeamStats() {
     try {
-      const operationalTeams = ['generation', 'distribution', 'transmission'];
       const teamStatsArray = [];
+
+      // Get all active teams from the teams table
+      const teams = await db('teams')
+        .where('is_active', true)
+        .select('id', 'name');
 
       // Get user counts per team
       const userCounts = await db('users')
-        .select('team')
+        .select('team_id')
         .count('* as count')
-        .whereIn('team', operationalTeams)
-        .groupBy('team');
+        .groupBy('team_id');
 
       const userCountMap = {};
       userCounts.forEach(row => {
-        userCountMap[row.team] = parseInt(row.count) || 0;
+        userCountMap[row.team_id] = parseInt(row.count) || 0;
       });
 
-      for (const team of operationalTeams) {
+      for (const team of teams) {
         const stats = await db('sheet_entries')
           .select(
             db.raw('COUNT(*) as total_entries'),
@@ -938,12 +941,12 @@ class SheetEntryService {
             db.raw("COUNT(CASE WHEN status = 'Not Started' THEN 1 END) as not_started"),
             db.raw("COUNT(CASE WHEN status = 'On Hold' THEN 1 END) as on_hold")
           )
-          .where('assigned_team', team)
+          .where('assigned_team', team.name)
           .first();
 
         teamStatsArray.push({
-          team_name: team,
-          user_count: userCountMap[team] || 0,
+          team_name: team.name,
+          user_count: userCountMap[team.id] || 0,
           total_entries: parseInt(stats.total_entries) || 0,
           completed_entries: parseInt(stats.completed) || 0,
           pending_entries: parseInt(stats.in_progress) + parseInt(stats.not_started) + parseInt(stats.on_hold) || 0,
@@ -956,7 +959,7 @@ class SheetEntryService {
         });
       }
 
-      console.log('Retrieved team statistics for all operational teams');
+      console.log('Retrieved team statistics for all active teams');
       return teamStatsArray;
     } catch (error) {
       console.error('Error getting team statistics:', error);

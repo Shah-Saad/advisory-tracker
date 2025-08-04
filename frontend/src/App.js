@@ -15,7 +15,6 @@ import Filters from './components/Filters/Filters';
 import AdminUserManagement from './components/Admin/AdminUserManagement';
 import TeamManagement from './components/Admin/TeamManagement';
 import TeamSheetSwitcher from './components/Admin/TeamSheetSwitcher';
-import SheetAssignment from './components/Admin/SheetAssignment';
 import NotificationPanel from './components/Admin/NotificationPanel';
 import TeamSheets from './components/TeamSheets/TeamSheets';
 import TeamSheetEditor from './components/TeamSheets/TeamSheetEditor';
@@ -114,14 +113,8 @@ function App() {
                   )}
                   {user && user.role === 'admin' && (
                     <Link className="nav-link text-white" to="/admin/team-sheets">
-                      <i className="fas fa-layer-group me-1"></i>
-                      Team Sheets
-                    </Link>
-                  )}
-                  {user && user.role === 'admin' && (
-                    <Link className="nav-link text-white" to="/admin/sheet-assignment">
-                      <i className="fas fa-tasks me-1"></i>
-                      Assign Sheets
+                      <i className="fas fa-chart-bar me-1"></i>
+                      Submissions Overview
                     </Link>
                   )}
                 </div>
@@ -195,9 +188,6 @@ function App() {
                   )}
                   {user && user.role === 'admin' && (
                     <Route path="/admin/team-sheets" element={<TeamSheetSwitcher />} />
-                  )}
-                  {user && user.role === 'admin' && (
-                    <Route path="/admin/sheet-assignment" element={<SheetAssignment />} />
                   )}
                   <Route path="/" element={<Navigate to="/dashboard" />} />
                 </Routes>

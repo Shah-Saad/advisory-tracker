@@ -224,6 +224,26 @@ const sheetService = {
     } catch (error) {
       throw error.response?.data || { message: 'Failed to distribute sheet to specific teams' };
     }
+  },
+
+  // Admin-only: Delete sheet
+  deleteSheet: async (sheetId) => {
+    try {
+      const response = await apiClient.delete(`/sheets/${sheetId}`);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to delete sheet' };
+    }
+  },
+
+  // Admin-only: Get detailed team sheet data
+  getTeamSheetData: async (sheetId, teamKey) => {
+    try {
+      const response = await apiClient.get(`/sheets/${sheetId}/team-data/${teamKey}`);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to fetch team sheet data' };
+    }
   }
 };
 

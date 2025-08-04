@@ -2,6 +2,7 @@ const Sheet = require('../models/Sheet');
 const Team = require('../models/Team');
 const TeamSheet = require('../models/TeamSheet');
 const SheetResponse = require('../models/SheetResponse');
+const SheetResponseService = require('./SheetResponseService');
 const FileProcessingService = require('./FileProcessingService');
 
 class SheetService {
@@ -209,16 +210,152 @@ class SheetService {
   }
 
   static async submitTeamSheet(sheetId, teamId, responses, userId) {
+    console.log('🔄 SheetService.submitTeamSheet called:');
+    console.log('  - Sheet ID:', sheetId);
+    console.log('  - Team ID:', teamId);
+    console.log('  - User ID:', userId);
+    console.log('  - Responses type:', typeof responses);
+    console.log('  - Responses value:', responses);
+    
     const assignment = await TeamSheet.findTeamAssignment(sheetId, teamId);
     if (!assignment) {
       throw new Error('Sheet not assigned to this team');
     }
+    console.log('✅ Found team assignment:', assignment);
 
-    // Save responses
-    await SheetResponse.saveTeamResponse(sheetId, teamId, responses, userId);
+    // Validate responses parameter
+    if (!responses) {
+      throw new Error('No responses provided');
+    }
 
-    // Update assignment status to completed
-    await TeamSheet.updateAssignmentStatus(sheetId, teamId, 'completed', userId);
+    // Convert responses to array format if it's an object
+    let responsesArray = [];
+    if (Array.isArray(responses)) {
+      responsesArray = responses;
+    } else if (typeof responses === 'object') {
+      // Convert object format { "entryId": responseData } to array format
+      responsesArray = Object.entries(responses).map(([entryId, responseData]) => ({
+        original_entry_id: parseInt(entryId),
+        ...responseData
+      }));
+    } else {
+      throw new Error('Invalid responses format. Expected array or object.');
+    }
+
+    console.log(`💾 Processing ${responsesArray.length} responses...`);
+
+    // Get team sheet ID for saving responses
+    const db = require('../config/db');
+    const teamSheet = await db('team_sheets')
+      .where({ sheet_id: sheetId, team_id: teamId })
+      .first();
+
+    if (!teamSheet) {
+      throw new Error('Team sheet assignment not found');
+    }
+
+    // Save each individual response to sheet_responses table
+    console.log(`💾 Saving ${responsesArray.length} responses to database...`);
+    for (const response of responsesArray) {
+      // Handle object format where entry ID is key and response is value
+      let entryId, responseData;
+      
+      if (response && response.original_entry_id) {
+        // Array format: [{ original_entry_id: 123, ...responseData }]
+        entryId = response.original_entry_id;
+        responseData = response;
+      } else if (response && response.entryId) {
+        // Alternative format: [{ entryId: 123, ...responseData }]
+        entryId = response.entryId;
+        responseData = response;
+      } else {
+        console.log('⚠️ Skipping invalid response (missing entry ID):', response);
+        continue;
+      }
+
+      // Map frontend field names to database column names (using actual existing columns)
+      const fieldMapping = {
+        'current_status': 'current_status',
+        'comments': 'comments',
+        'risk_level': 'risk_level',
+        'patching': 'comments', // Map patching info to comments since no dedicated field
+        'patching_est_release_date': 'patching_est_release_date',
+        'implementation_date': 'implementation_date',
+        'vendor_contacted': 'vendor_contacted',
+        'vendor_contact_date': 'vendor_contact_date',
+        'compensatory_controls_provided': 'compensatory_controls_provided',
+        'compensatory_controls_details': 'compensatory_controls_details',
+        'estimated_time': 'estimated_time'
+      };
+
+      // Transform response data to match database schema
+      const dbResponseData = {};
+      Object.keys(responseData).forEach(key => {
+        if (key === 'original_entry_id') {
+          return; // Skip this as it's handled separately
+        }
+        
+        const dbColumnName = fieldMapping[key] || key;
+        
+        // Only include fields that actually exist in the current database schema
+        const actualValidColumns = [
+          'product_name', 'vendor_name', 'oem_vendor', 'site', 'status', 'current_status',
+          'deployed_in_ke', 'risk_level', 'cve', 'date', 'vendor_contact_date',
+          'patching_est_release_date', 'implementation_date', 'estimated_completion_date',
+          'resolution_date', 'vendor_contacted', 'compensatory_controls_provided',
+          'compensatory_controls_details', 'estimated_time', 'comments'
+        ];
+        
+        if (actualValidColumns.includes(dbColumnName)) {
+          // Convert empty strings to null for database compatibility
+          let processedValue = responseData[key];
+          if (processedValue === "" || processedValue === null || processedValue === undefined) {
+            processedValue = null;
+          }
+          dbResponseData[dbColumnName] = processedValue;
+        }
+      });
+
+      console.log(`📝 Mapped response for entry ${entryId}:`, Object.keys(dbResponseData));
+
+      // Check if response already exists
+      const existingResponse = await db('sheet_responses')
+        .where({
+          team_sheet_id: teamSheet.id,
+          original_entry_id: entryId
+        })
+        .first();
+
+      if (existingResponse) {
+        // Update existing response
+        await db('sheet_responses')
+          .where('id', existingResponse.id)
+          .update({
+            ...dbResponseData,
+            updated_by: userId,
+            updated_at: db.fn.now()
+          });
+        console.log(`✅ Updated response for entry ${entryId}`);
+      } else {
+        // Create new response
+        await db('sheet_responses')
+          .insert({
+            team_sheet_id: teamSheet.id,
+            original_entry_id: entryId,
+            ...dbResponseData,
+            updated_by: userId,
+            created_at: db.fn.now(),
+            updated_at: db.fn.now()
+          });
+        console.log(`✅ Created new response for entry ${entryId}`);
+      }
+    }
+    console.log('✅ Saved team responses');
+
+    // Mark as completed and create notification
+    const SheetResponseService = require('./SheetResponseService');
+    await SheetResponseService.markTeamSheetCompleted(sheetId, teamId, userId);
+    console.log('✅ Marked sheet as completed and created notifications');
 
     return { message: 'Sheet submitted successfully' };
   }
@@ -434,56 +571,59 @@ class SheetService {
 
   // Get sheet with team-specific versions (Admin only)
   static async getSheetByTeams(sheetId) {
-    // Get the basic sheet information
-    const sheet = await this.getSheetById(sheetId);
-    
-    // Get all teams that have this sheet assigned
-    const db = require('../config/db');
-    const teamAssignments = await db('team_sheets')
-      .join('teams', 'team_sheets.team_id', 'teams.id')
-      .where('team_sheets.sheet_id', sheetId)
-      .select(
-        'teams.id as team_id',
-        'teams.name as team_name',
-        'team_sheets.status',
-        'team_sheets.assigned_at',
-        'team_sheets.completed_at'
+    try {
+      console.log('🔍 getSheetByTeams called for sheet:', sheetId);
+      
+      // Get the basic sheet information
+      const sheet = await this.getSheetById(sheetId);
+      console.log('✅ Found sheet:', sheet.title);
+      
+      // Get all teams that have this sheet assigned
+      const db = require('../config/db');
+      const teamAssignments = await db('team_sheets')
+        .join('teams', 'team_sheets.team_id', 'teams.id')
+        .where('team_sheets.sheet_id', sheetId)
+        .select(
+          'teams.id as team_id',
+          'teams.name as team_name',
+          'team_sheets.status',
+          'team_sheets.assigned_at',
+          'team_sheets.completed_at'
+        );
+
+      console.log(`📋 Found ${teamAssignments.length} team assignments`);
+
+      // Get responses for each team
+      const teamViews = await Promise.all(
+        teamAssignments.map(async (assignment) => {
+          console.log(`🔎 Getting responses for team ${assignment.team_name} (ID: ${assignment.team_id})`);
+          
+          const responses = await SheetResponseService.getTeamDetailedResponses(sheetId, assignment.team_id);
+          console.log(`📊 Found ${responses.length} responses for team ${assignment.team_name}`);
+          
+          return {
+            team_id: assignment.team_id,
+            team_name: assignment.team_name,
+            assignment_status: assignment.status,
+            assigned_at: assignment.assigned_at,
+            completed_at: assignment.completed_at,
+            responses: responses,
+            response_count: responses.length
+          };
+        })
       );
 
-    // Get responses for each team
-    const teamViews = await Promise.all(
-      teamAssignments.map(async (assignment) => {
-        const responses = await SheetResponse.findByTeamSheet(sheetId, assignment.team_id);
-        
-        // Process response data from JSONB format
-        let responseMap = {};
-        let responseCount = 0;
-        
-        if (responses.length > 0) {
-          const response = responses[0]; // Should be only one response per team
-          if (response.response_data) {
-            responseMap = response.response_data;
-            responseCount = Object.keys(response.response_data).length;
-          }
-        }
-
-        return {
-          team_id: assignment.team_id,
-          team_name: assignment.team_name,
-          assignment_status: assignment.status,
-          assigned_at: assignment.assigned_at,
-          completed_at: assignment.completed_at,
-          responses: responseMap,
-          response_count: responseCount
-        };
-      })
-    );
-
-    return {
-      sheet: sheet,
-      team_versions: teamViews,
-      total_teams: teamViews.length
-    };
+      console.log('✅ getSheetByTeams completed successfully');
+      
+      return {
+        sheet: sheet,
+        team_versions: teamViews,
+        total_teams: teamViews.length
+      };
+    } catch (error) {
+      console.error('❌ Error in getSheetByTeams:', error);
+      throw error;
+    }
   }
 
   // Get specific team's version of a sheet (Admin only)
@@ -598,6 +738,30 @@ class SheetService {
     );
 
     return sheetsWithTeamStatus;
+  }
+
+  static async getTeamSheetData(sheetId, teamId) {
+    const sheet = await Sheet.findById(sheetId);
+    if (!sheet) {
+      throw new Error('Sheet not found');
+    }
+
+    // Get team assignment details
+    const assignment = await TeamSheet.findTeamAssignment(sheetId, teamId);
+    if (!assignment) {
+      throw new Error('Team not assigned to this sheet');
+    }
+
+    // Get team responses using the correct method
+    const responses = await SheetResponse.findByTeamSheet(sheetId, teamId);
+
+    return {
+      sheet,
+      assignment,
+      responses,
+      response_count: responses.length,
+      completion_percentage: assignment.completion_percentage || 0
+    };
   }
 }
 

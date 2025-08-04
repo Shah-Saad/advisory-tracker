@@ -3,24 +3,62 @@ import { toast } from 'react-toastify';
 import sheetService from '../../services/sheetService';
 import './TeamSheetSwitcher.css';
 
-const TeamSheetSwitcher = () => {
+const TeamSubmissionsOverview = () => {
   const [sheets, setSheets] = useState([]);
   const [selectedSheet, setSelectedSheet] = useState(null);
-  const [teamViews, setTeamViews] = useState(null);
-  const [selectedTeam, setSelectedTeam] = useState(null);
-  const [teamSheetData, setTeamSheetData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [teamLoading, setTeamLoading] = useState(false);
-
-  const teams = [
-    { id: 1, name: 'Generation', key: 'generation' },
-    { id: 2, name: 'Distribution', key: 'distribution' },
-    { id: 3, name: 'Transmission', key: 'transmission' }
-  ];
+  const [deletingSheet, setDeletingSheet] = useState(null);
+  const [showTeamModal, setShowTeamModal] = useState(false);
+  const [modalTeamData, setModalTeamData] = useState(null);
+  const [modalLoading, setModalLoading] = useState(false);
 
   useEffect(() => {
     fetchSheets();
   }, []);
+
+  const handleDeleteSheet = async (sheetId, sheetTitle) => {
+    // Show confirmation dialog
+    const confirmed = window.confirm(
+      `Are you sure you want to delete the sheet "${sheetTitle}"? This will also remove all team assignments and responses for this sheet. This action cannot be undone.`
+    );
+    
+    if (!confirmed) {
+      return;
+    }
+
+    setDeletingSheet(sheetId);
+
+    try {
+      await sheetService.deleteSheet(sheetId);
+      
+      toast.success(
+        `Successfully deleted sheet "${sheetTitle}" and all associated data`,
+        {
+          position: "top-right",
+          autoClose: 5000,
+        }
+      );
+      
+      // Reset selected sheet if it was deleted
+      if (selectedSheet && selectedSheet.id === sheetId) {
+        setSelectedSheet(null);
+      }
+      
+      // Reload sheets list
+      fetchSheets();
+      
+    } catch (error) {
+      console.error('Error deleting sheet:', error);
+      const errorMessage = error.response?.data?.message || 'Failed to delete sheet';
+      
+      toast.error(errorMessage, {
+        position: "top-right",
+        autoClose: 5000,
+      });
+    } finally {
+      setDeletingSheet(null);
+    }
+  };
 
   const fetchSheets = async () => {
     try {
@@ -32,42 +70,6 @@ const TeamSheetSwitcher = () => {
       toast.error('Failed to fetch sheets');
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleSheetSelect = async (sheet) => {
-    try {
-      setSelectedSheet(sheet);
-      setSelectedTeam(null);
-      setTeamSheetData(null);
-      setTeamLoading(true);
-
-      const teamViewsData = await sheetService.getSheetByTeams(sheet.id);
-      setTeamViews(teamViewsData);
-    } catch (error) {
-      console.error('Error fetching team views:', error);
-      toast.error('Failed to fetch team views for this sheet');
-      setTeamViews(null);
-    } finally {
-      setTeamLoading(false);
-    }
-  };
-
-  const handleTeamSelect = async (team) => {
-    if (!selectedSheet) return;
-
-    try {
-      setSelectedTeam(team);
-      setTeamLoading(true);
-
-      const teamData = await sheetService.getSheetForTeam(selectedSheet.id, team.id);
-      setTeamSheetData(teamData);
-    } catch (error) {
-      console.error('Error fetching team sheet data:', error);
-      toast.error(`Failed to fetch ${team.name} team data`);
-      setTeamSheetData(null);
-    } finally {
-      setTeamLoading(false);
     }
   };
 
@@ -97,182 +99,609 @@ const TeamSheetSwitcher = () => {
   }
 
   return (
-    <div className="team-sheet-switcher">
-      <div className="row">
-        <div className="col-md-4">
-          <div className="card">
-            <div className="card-header">
-              <h5 className="mb-0">Select Sheet</h5>
-            </div>
-            <div className="card-body">
-              {sheets.length === 0 ? (
-                <p className="text-muted">No distributed sheets available</p>
-              ) : (
-                <div className="list-group">
-                  {sheets.map((sheet) => (
-                    <button
-                      key={sheet.id}
-                      className={`list-group-item list-group-item-action ${
-                        selectedSheet?.id === sheet.id ? 'active' : ''
-                      }`}
-                      onClick={() => handleSheetSelect(sheet)}
-                    >
-                      <div className="d-flex w-100 justify-content-between">
-                        <h6 className="mb-1">{sheet.title}</h6>
-                        <small className={getStatusBadgeClass(sheet.status)}>
-                          {sheet.status}
-                        </small>
-                      </div>
-                      <p className="mb-1 small">{sheet.description}</p>
-                      <small>
-                        Uploaded: {formatDate(sheet.created_at)}
-                        {sheet.distributed_at && (
-                          <> • Distributed: {formatDate(sheet.distributed_at)}</>
-                        )}
-                      </small>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+    <div className="team-submissions-overview">
+      <div className="d-flex justify-content-between align-items-center mb-4">
+        <div>
+          <h2 className="h4 mb-0">
+            <i className="fas fa-chart-bar me-2"></i>
+            Team Submissions Overview
+          </h2>
+          <p className="text-muted mb-0">Monitor team progress and view submitted sheets</p>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="text-center py-5">
+          <div className="spinner-border" role="status">
+            <span className="visually-hidden">Loading...</span>
+          </div>
+          <p className="mt-2 text-muted">Loading submissions data...</p>
+        </div>
+      ) : sheets.length === 0 ? (
+        <div className="card">
+          <div className="card-body text-center py-5">
+            <i className="fas fa-inbox fa-3x text-muted mb-3"></i>
+            <h5>No Sheets Available</h5>
+            <p className="text-muted">Upload a sheet to see team submissions here.</p>
           </div>
         </div>
-
-        <div className="col-md-4">
-          <div className="card">
-            <div className="card-header">
-              <h5 className="mb-0">Select Team</h5>
-            </div>
-            <div className="card-body">
-              {!selectedSheet ? (
-                <p className="text-muted">Please select a sheet first</p>
-              ) : teamLoading ? (
-                <div className="text-center">
-                  <div className="spinner-border spinner-border-sm" role="status">
-                    <span className="visually-hidden">Loading...</span>
-                  </div>
-                </div>
-              ) : !teamViews ? (
-                <p className="text-muted">No team data available for this sheet</p>
-              ) : (
-                <div className="list-group">
-                  {teams.map((team) => {
-                    const teamView = teamViews.teamViews?.find(tv => tv.team_name.toLowerCase() === team.key);
-                    return (
-                      <button
-                        key={team.id}
-                        className={`list-group-item list-group-item-action ${
-                          selectedTeam?.id === team.id ? 'active' : ''
-                        } ${!teamView ? 'disabled' : ''}`}
-                        onClick={() => teamView && handleTeamSelect(team)}
-                        disabled={!teamView}
-                      >
-                        <div className="d-flex w-100 justify-content-between">
-                          <h6 className="mb-1">{team.name}</h6>
-                          {teamView && (
-                            <small className={getStatusBadgeClass(teamView.status)}>
-                              {teamView.status}
-                            </small>
-                          )}
-                        </div>
-                        {teamView ? (
-                          <div>
-                            <small>
-                              Responses: {teamView.response_count || 0} entries
-                              {teamView.assigned_at && (
-                                <> • Assigned: {formatDate(teamView.assigned_at)}</>
-                              )}
-                            </small>
-                          </div>
-                        ) : (
-                          <small className="text-muted">Not assigned to this team</small>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-
-        <div className="col-md-4">
-          <div className="card">
-            <div className="card-header">
-              <h5 className="mb-0">Team Sheet Preview</h5>
-              {selectedTeam && (
-                <small className="text-muted">
-                  {selectedTeam.name} Team • {selectedSheet?.title}
-                </small>
-              )}
-            </div>
-            <div className="card-body">
-              {!selectedTeam ? (
-                <p className="text-muted">Please select a team to view their sheet data</p>
-              ) : teamLoading ? (
-                <div className="text-center">
-                  <div className="spinner-border spinner-border-sm" role="status">
-                    <span className="visually-hidden">Loading...</span>
-                  </div>
-                </div>
-              ) : !teamSheetData ? (
-                <p className="text-muted">No data available for this team</p>
-              ) : (
-                <div className="team-sheet-preview">
-                  <div className="mb-3">
-                    <strong>Assignment Details:</strong>
-                    <ul className="list-unstyled mt-1">
-                      <li><small>Status: <span className={getStatusBadgeClass(teamSheetData.assignment.status)}>{teamSheetData.assignment.status}</span></small></li>
-                      <li><small>Assigned: {formatDate(teamSheetData.assignment.assigned_at)}</small></li>
-                      {teamSheetData.assignment.completed_at && (
-                        <li><small>Completed: {formatDate(teamSheetData.assignment.completed_at)}</small></li>
+      ) : (
+        <div className="row">
+          {sheets.map((sheet) => (
+            <div key={sheet.id} className="col-12 mb-4">
+              <div className="card">
+                <div className="card-header d-flex justify-content-between align-items-center">
+                  <div>
+                    <h5 className="mb-1">{sheet.title}</h5>
+                    <small className="text-muted">
+                      Uploaded: {formatDate(sheet.created_at)}
+                      {sheet.distributed_at && (
+                        <> • Distributed: {formatDate(sheet.distributed_at)}</>
                       )}
-                    </ul>
+                    </small>
                   </div>
-
-                  <div className="mb-3">
-                    <strong>Response Summary:</strong>
-                    <ul className="list-unstyled mt-1">
-                      <li><small>Total Responses: {teamSheetData.response_count || 0}</small></li>
-                      <li><small>Progress: {teamSheetData.completion_percentage || 0}%</small></li>
-                    </ul>
+                  <div className="d-flex gap-2 align-items-center">
+                    <span className={getStatusBadgeClass(sheet.status)}>
+                      {sheet.status}
+                    </span>
+                    <button
+                      className="btn btn-danger btn-sm"
+                      onClick={() => handleDeleteSheet(sheet.id, sheet.title)}
+                      disabled={deletingSheet === sheet.id}
+                      title="Delete this sheet"
+                    >
+                      {deletingSheet === sheet.id ? (
+                        <span className="spinner-border spinner-border-sm" role="status"></span>
+                      ) : (
+                        <i className="fas fa-trash"></i>
+                      )}
+                    </button>
                   </div>
+                </div>
+                <div className="card-body">
+                  <TeamSubmissionTable sheetId={sheet.id} />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
-                  {teamSheetData.responses && teamSheetData.responses.length > 0 && (
-                    <div>
-                      <strong>Recent Entries:</strong>
-                      <div className="mt-2" style={{ maxHeight: '300px', overflowY: 'auto' }}>
-                        {teamSheetData.responses.slice(0, 5).map((response, index) => (
-                          <div key={index} className="border rounded p-2 mb-2 bg-light">
-                            <small>
-                              <div><strong>Row {response.row_number}:</strong></div>
-                              {response.response_data && Object.entries(response.response_data).slice(0, 3).map(([key, value]) => (
-                                <div key={key}>
-                                  <em>{key}:</em> {value || 'N/A'}
-                                </div>
-                              ))}
-                              <div className="text-muted">
-                                Updated: {formatDate(response.updated_at)}
-                              </div>
-                            </small>
-                          </div>
-                        ))}
-                        {teamSheetData.responses.length > 5 && (
-                          <small className="text-muted">
-                            ... and {teamSheetData.responses.length - 5} more entries
-                          </small>
+      {/* Team Sheet Modal */}
+      {showTeamModal && (
+        <div className="modal fade show" style={{display: 'block'}} tabIndex="-1">
+          <div className="modal-dialog modal-xl">
+            <div className="modal-content">
+              <div className="modal-header">
+                <h5 className="modal-title">
+                  {modalTeamData?.teamName} Team - {modalTeamData?.sheet?.title}
+                </h5>
+                <button
+                  type="button"
+                  className="btn-close"
+                  onClick={() => setShowTeamModal(false)}
+                ></button>
+              </div>
+              <div className="modal-body">
+                {modalLoading ? (
+                  <div className="text-center py-4">
+                    <div className="spinner-border" role="status">
+                      <span className="visually-hidden">Loading...</span>
+                    </div>
+                    <p className="mt-2">Loading team sheet data...</p>
+                  </div>
+                ) : modalTeamData ? (
+                  <div>
+                    {/* Sheet Information */}
+                    <div className="row mb-4">
+                      <div className="col-md-6">
+                        <h6>Sheet Information</h6>
+                        <p><strong>Title:</strong> {modalTeamData.sheet?.title}</p>
+                        <p><strong>Status:</strong> {modalTeamData.sheet?.status}</p>
+                        <p><strong>Created:</strong> {modalTeamData.sheet?.created_at ? new Date(modalTeamData.sheet.created_at).toLocaleDateString() : 'N/A'}</p>
+                      </div>
+                      <div className="col-md-6">
+                        <h6>Team Assignment</h6>
+                        <p><strong>Status:</strong> 
+                          <span className={`badge ms-2 ${modalTeamData.assignment?.status === 'completed' ? 'bg-success' : 
+                            modalTeamData.assignment?.status === 'in_progress' ? 'bg-warning' : 'bg-secondary'}`}>
+                            {modalTeamData.assignment?.status || 'Unknown'}
+                          </span>
+                        </p>
+                        <p><strong>Assigned:</strong> {modalTeamData.assignment?.assigned_at ? new Date(modalTeamData.assignment.assigned_at).toLocaleDateString() : 'N/A'}</p>
+                        {modalTeamData.assignment?.completed_at && (
+                          <p><strong>Completed:</strong> {new Date(modalTeamData.assignment.completed_at).toLocaleDateString()}</p>
                         )}
                       </div>
                     </div>
-                  )}
-                </div>
-              )}
+
+                    {/* Response Statistics */}
+                    <div className="row mb-4">
+                      <div className="col-md-12">
+                        <h6>Response Summary</h6>
+                        <div className="row">
+                          <div className="col-md-3">
+                            <div className="card text-center">
+                              <div className="card-body">
+                                <h5 className="card-title text-primary">{modalTeamData.response_count || 0}</h5>
+                                <p className="card-text">Total Responses</p>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="col-md-3">
+                            <div className="card text-center">
+                              <div className="card-body">
+                                <h5 className="card-title text-success">{modalTeamData.completion_percentage || 0}%</h5>
+                                <p className="card-text">Completion</p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Responses Table */}
+                    {modalTeamData.responses && modalTeamData.responses.length > 0 ? (
+                      <div>
+                        <h6>Team Responses ({modalTeamData.responses.length})</h6>
+                        <div className="table-responsive" style={{maxHeight: '400px', overflowY: 'auto'}}>
+                          <table className="table table-sm table-hover">
+                            <thead className="table-light sticky-top">
+                              <tr>
+                                <th>Product Name</th>
+                                <th>Current Status</th>
+                                <th>Deployed in KE</th>
+                                <th>Risk Level</th>
+                                <th>Vendor Contacted</th>
+                                <th>Compensatory Controls</th>
+                                <th>Comments</th>
+                                <th>Last Updated</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {modalTeamData.responses.map((response, index) => (
+                                <tr key={response.id || index}>
+                                  <td>
+                                    <strong>{response.original_product_name || response.product_name || 'N/A'}</strong>
+                                  </td>
+                                  <td>
+                                    <span className={`badge ${response.current_status === 'Completed' ? 'bg-success' : 
+                                      response.current_status === 'In Progress' ? 'bg-warning' : 
+                                      response.current_status === 'Blocked' ? 'bg-danger' : 'bg-secondary'}`}>
+                                      {response.current_status || 'Not Started'}
+                                    </span>
+                                  </td>
+                                  <td>
+                                    <span className={`badge ${response.deployed_in_ke === 'Y' ? 'bg-success' : 'bg-danger'}`}>
+                                      {response.deployed_in_ke === 'Y' ? 'Yes' : 'No'}
+                                    </span>
+                                  </td>
+                                  <td>
+                                    <span className={`badge ${response.risk_level === 'Critical' ? 'bg-danger' : 
+                                      response.risk_level === 'High' ? 'bg-warning' : 
+                                      response.risk_level === 'Medium' ? 'bg-info' : 'bg-secondary'}`}>
+                                      {response.risk_level || 'N/A'}
+                                    </span>
+                                  </td>
+                                  <td>
+                                    <span className={`badge ${response.vendor_contacted === 'Y' ? 'bg-success' : 'bg-secondary'}`}>
+                                      {response.vendor_contacted === 'Y' ? 'Yes' : 'No'}
+                                    </span>
+                                  </td>
+                                  <td>
+                                    <span className={`badge ${response.compensatory_controls_provided === 'Y' ? 'bg-success' : 'bg-secondary'}`}>
+                                      {response.compensatory_controls_provided === 'Y' ? 'Yes' : 'No'}
+                                    </span>
+                                  </td>
+                                  <td>
+                                    {response.comments ? (
+                                      <span title={response.comments}>
+                                        {response.comments.length > 50 ? 
+                                          response.comments.substring(0, 50) + '...' : 
+                                          response.comments}
+                                      </span>
+                                    ) : (
+                                      <span className="text-muted">No comments</span>
+                                    )}
+                                  </td>
+                                  <td>
+                                    <small>{response.updated_at ? new Date(response.updated_at).toLocaleDateString() : 'N/A'}</small>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-center py-4">
+                        <i className="fas fa-inbox fa-3x text-muted mb-3"></i>
+                        <h5>No Responses Yet</h5>
+                        <p className="text-muted">This team hasn't submitted any responses for this sheet.</p>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-center py-4">
+                    <p className="text-muted">No data available</p>
+                  </div>
+                )}
+              </div>
+              <div className="modal-footer">
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => setShowTeamModal(false)}
+                >
+                  Close
+                </button>
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      )}
+      
+      {/* Modal backdrop */}
+      {showTeamModal && (
+        <div className="modal-backdrop fade show"></div>
+      )}
     </div>
   );
 };
 
-export default TeamSheetSwitcher;
+// Component to show team submission status for a specific sheet
+const TeamSubmissionTable = ({ sheetId }) => {
+  const [teamData, setTeamData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [showTeamModal, setShowTeamModal] = useState(false);
+  const [modalTeamData, setModalTeamData] = useState(null);
+  const [modalLoading, setModalLoading] = useState(false);
+
+  const teams = [
+    { id: 1, name: 'Generation', key: 'generation' },
+    { id: 2, name: 'Distribution', key: 'distribution' },
+    { id: 3, name: 'Transmission', key: 'transmission' }
+  ];
+
+  useEffect(() => {
+    fetchTeamData();
+  }, [sheetId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const fetchTeamData = async () => {
+    try {
+      setLoading(true);
+      const data = await sheetService.getSheetByTeams(sheetId);
+      setTeamData(data);
+    } catch (error) {
+      console.error('Error fetching team data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getSubmissionStatus = (teamKey) => {
+    if (!teamData?.team_versions) return 'not_assigned';
+    const teamView = teamData.team_versions.find(tv => tv.team_name.toLowerCase() === teamKey);
+    return teamView?.assignment_status || 'not_assigned';
+  };
+
+  const getResponseCount = (teamKey) => {
+    if (!teamData?.team_versions) return 0;
+    const teamView = teamData.team_versions.find(tv => tv.team_name.toLowerCase() === teamKey);
+    return teamView?.response_count || 0;
+  };
+
+  const getCompletionPercentage = (teamKey) => {
+    if (!teamData?.team_versions) return 0;
+    const teamView = teamData.team_versions.find(tv => tv.team_name.toLowerCase() === teamKey);
+    // Calculate percentage based on responses (simplified)
+    return teamView?.response_count > 0 ? Math.min(100, teamView.response_count * 10) : 0;
+  };
+
+  const getLastUpdated = (teamKey) => {
+    if (!teamData?.team_versions) return null;
+    const teamView = teamData.team_versions.find(tv => tv.team_name.toLowerCase() === teamKey);
+    return teamView?.completed_at || teamView?.assigned_at;
+  };
+
+  const getStatusBadgeClass = (status) => {
+    switch (status?.toLowerCase()) {
+      case 'completed': return 'badge bg-success';
+      case 'in_progress': return 'badge bg-warning text-dark';
+      case 'pending': return 'badge bg-secondary';
+      case 'submitted': return 'badge bg-info text-dark';
+      case 'not_assigned': return 'badge bg-light text-dark';
+      default: return 'badge bg-light text-dark';
+    }
+  };
+
+  const formatDate = (dateString) => {
+    if (!dateString) return 'Never';
+    return new Date(dateString).toLocaleString();
+  };
+
+  const handleViewTeamSheet = async (teamKey) => {
+    try {
+      setModalLoading(true);
+      setShowTeamModal(true);
+      
+      // Fetch detailed team sheet data
+      const detailedData = await sheetService.getTeamSheetData(sheetId, teamKey);
+      
+      setModalTeamData({
+        ...detailedData,
+        teamKey: teamKey,
+        teamName: teamKey.charAt(0).toUpperCase() + teamKey.slice(1)
+      });
+      
+    } catch (error) {
+      console.error('Error fetching team sheet data:', error);
+      toast.error('Failed to load team sheet data');
+      setShowTeamModal(false);
+    } finally {
+      setModalLoading(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="text-center py-3">
+        <div className="spinner-border spinner-border-sm" role="status">
+          <span className="visually-hidden">Loading...</span>
+        </div>
+        <span className="ms-2">Loading team data...</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="table-responsive">
+      <table className="table table-hover">
+        <thead>
+          <tr>
+            <th>Team</th>
+            <th>Status</th>
+            <th>Progress</th>
+            <th>Responses</th>
+            <th>Last Updated</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {teams.map((team) => {
+            const status = getSubmissionStatus(team.key);
+            const responseCount = getResponseCount(team.key);
+            const completionPercentage = getCompletionPercentage(team.key);
+            const lastUpdated = getLastUpdated(team.key);
+            
+            return (
+              <tr key={team.id}>
+                <td>
+                  <strong>{team.name}</strong>
+                </td>
+                <td>
+                  <span className={getStatusBadgeClass(status)}>
+                    {status.replace('_', ' ').toUpperCase()}
+                  </span>
+                </td>
+                <td>
+                  <div className="d-flex align-items-center">
+                    <div className="progress me-2" style={{ width: '100px', height: '20px' }}>
+                      <div
+                        className={`progress-bar ${completionPercentage >= 100 ? 'bg-success' : completionPercentage > 0 ? 'bg-warning' : 'bg-secondary'}`}
+                        role="progressbar"
+                        style={{ width: `${Math.min(completionPercentage, 100)}%` }}
+                      ></div>
+                    </div>
+                    <small>{completionPercentage}%</small>
+                  </div>
+                </td>
+                <td>
+                  <span className="badge bg-primary">{responseCount}</span>
+                </td>
+                <td>
+                  <small>{formatDate(lastUpdated)}</small>
+                </td>
+                <td>
+                  {status !== 'not_assigned' ? (
+                    <button
+                      className="btn btn-outline-primary btn-sm"
+                      onClick={() => handleViewTeamSheet(team.key)}
+                      title={`View ${team.name} team submission`}
+                    >
+                      <i className="fas fa-eye me-1"></i>
+                      View
+                    </button>
+                  ) : (
+                    <span className="text-muted">Not assigned</span>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+
+      {/* Team Sheet Modal for TeamSubmissionTable */}
+      {showTeamModal && (
+        <>
+          <div className="modal fade show" style={{display: 'block'}} tabIndex="-1">
+            <div className="modal-dialog modal-xl">
+              <div className="modal-content">
+                <div className="modal-header">
+                  <h5 className="modal-title">
+                    {modalTeamData?.teamName} Team Submission Details
+                  </h5>
+                  <button
+                    type="button"
+                    className="btn-close"
+                    onClick={() => setShowTeamModal(false)}
+                  ></button>
+                </div>
+                <div className="modal-body">
+                  {modalLoading ? (
+                    <div className="text-center py-4">
+                      <div className="spinner-border" role="status">
+                        <span className="visually-hidden">Loading...</span>
+                      </div>
+                      <p className="mt-2">Loading team sheet data...</p>
+                    </div>
+                  ) : modalTeamData ? (
+                    <div>
+                      {/* Sheet Information */}
+                      <div className="row mb-4">
+                        <div className="col-md-6">
+                          <h6>Sheet Information</h6>
+                          <p><strong>Title:</strong> {modalTeamData.sheet?.title}</p>
+                          <p><strong>Status:</strong> {modalTeamData.sheet?.status}</p>
+                          <p><strong>Created:</strong> {modalTeamData.sheet?.created_at ? new Date(modalTeamData.sheet.created_at).toLocaleDateString() : 'N/A'}</p>
+                        </div>
+                        <div className="col-md-6">
+                          <h6>Team Assignment</h6>
+                          <p><strong>Status:</strong> 
+                            <span className={`badge ms-2 ${modalTeamData.assignment?.status === 'completed' ? 'bg-success' : 
+                              modalTeamData.assignment?.status === 'in_progress' ? 'bg-warning' : 'bg-secondary'}`}>
+                              {modalTeamData.assignment?.status || 'Unknown'}
+                            </span>
+                          </p>
+                          <p><strong>Assigned:</strong> {modalTeamData.assignment?.assigned_at ? new Date(modalTeamData.assignment.assigned_at).toLocaleDateString() : 'N/A'}</p>
+                          {modalTeamData.assignment?.completed_at && (
+                            <p><strong>Completed:</strong> {new Date(modalTeamData.assignment.completed_at).toLocaleDateString()}</p>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Response Statistics */}
+                      <div className="row mb-4">
+                        <div className="col-md-12">
+                          <h6>Response Summary</h6>
+                          <div className="row">
+                            <div className="col-md-3">
+                              <div className="card text-center">
+                                <div className="card-body">
+                                  <h5 className="card-title text-primary">{modalTeamData.response_count || 0}</h5>
+                                  <p className="card-text">Total Responses</p>
+                                </div>
+                              </div>
+                            </div>
+                            <div className="col-md-3">
+                              <div className="card text-center">
+                                <div className="card-body">
+                                  <h5 className="card-title text-success">{modalTeamData.completion_percentage || 0}%</h5>
+                                  <p className="card-text">Completion</p>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Responses Table */}
+                      {modalTeamData.responses && modalTeamData.responses.length > 0 ? (
+                        <div>
+                          <h6>Team Responses ({modalTeamData.responses.length})</h6>
+                          <div className="table-responsive" style={{maxHeight: '400px', overflowY: 'auto'}}>
+                            <table className="table table-sm table-hover">
+                              <thead className="table-light sticky-top">
+                                <tr>
+                                  <th>Product Name</th>
+                                  <th>Current Status</th>
+                                  <th>Deployed in KE</th>
+                                  <th>Risk Level</th>
+                                  <th>Vendor Contacted</th>
+                                  <th>Compensatory Controls</th>
+                                  <th>Comments</th>
+                                  <th>Last Updated</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {modalTeamData.responses.map((response, index) => (
+                                  <tr key={response.id || index}>
+                                    <td>
+                                      <strong>{response.original_product_name || response.product_name || 'N/A'}</strong>
+                                    </td>
+                                    <td>
+                                      <span className={`badge ${response.current_status === 'Completed' ? 'bg-success' : 
+                                        response.current_status === 'In Progress' ? 'bg-warning' : 
+                                        response.current_status === 'Blocked' ? 'bg-danger' : 'bg-secondary'}`}>
+                                        {response.current_status || 'Not Started'}
+                                      </span>
+                                    </td>
+                                    <td>
+                                      <span className={`badge ${response.deployed_in_ke === 'Y' ? 'bg-success' : 'bg-danger'}`}>
+                                        {response.deployed_in_ke === 'Y' ? 'Yes' : 'No'}
+                                      </span>
+                                    </td>
+                                    <td>
+                                      <span className={`badge ${response.risk_level === 'Critical' ? 'bg-danger' : 
+                                        response.risk_level === 'High' ? 'bg-warning' : 
+                                        response.risk_level === 'Medium' ? 'bg-info' : 'bg-secondary'}`}>
+                                        {response.risk_level || 'N/A'}
+                                      </span>
+                                    </td>
+                                    <td>
+                                      <span className={`badge ${response.vendor_contacted === 'Y' ? 'bg-success' : 'bg-secondary'}`}>
+                                        {response.vendor_contacted === 'Y' ? 'Yes' : 'No'}
+                                      </span>
+                                    </td>
+                                    <td>
+                                      <span className={`badge ${response.compensatory_controls_provided === 'Y' ? 'bg-success' : 'bg-secondary'}`}>
+                                        {response.compensatory_controls_provided === 'Y' ? 'Yes' : 'No'}
+                                      </span>
+                                    </td>
+                                    <td>
+                                      {response.comments ? (
+                                        <span title={response.comments}>
+                                          {response.comments.length > 50 ? 
+                                            response.comments.substring(0, 50) + '...' : 
+                                            response.comments}
+                                        </span>
+                                      ) : (
+                                        <span className="text-muted">No comments</span>
+                                      )}
+                                    </td>
+                                    <td>
+                                      <small>{response.updated_at ? new Date(response.updated_at).toLocaleDateString() : 'N/A'}</small>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-center py-4">
+                          <i className="fas fa-inbox fa-3x text-muted mb-3"></i>
+                          <h5>No Responses Yet</h5>
+                          <p className="text-muted">This team hasn't submitted any responses for this sheet.</p>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="text-center py-4">
+                      <p className="text-muted">No data available</p>
+                    </div>
+                  )}
+                </div>
+                <div className="modal-footer">
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => setShowTeamModal(false)}
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          {/* Modal backdrop */}
+          <div className="modal-backdrop fade show"></div>
+        </>
+      )}
+    </div>
+  );
+};
+
+export default TeamSubmissionsOverview;

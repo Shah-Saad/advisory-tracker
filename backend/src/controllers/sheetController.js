@@ -12,6 +12,41 @@ const sheetController = {
     }
   },
 
+  // Get all sheets with team status (Admin only)
+  async getAllSheetsWithTeamStatus(req, res) {
+    try {
+      const sheets = await SheetService.getAllSheetsWithTeamStatus();
+      res.json(sheets);
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  },
+
+  // Get detailed team sheet data (Admin only)
+  async getTeamSheetData(req, res) {
+    try {
+      const { id, teamKey } = req.params;
+      
+      // Map team key to team ID
+      const teamMap = {
+        'generation': 31,
+        'distribution': 32,
+        'transmission': 33
+      };
+      
+      const teamId = teamMap[teamKey.toLowerCase()];
+      if (!teamId) {
+        return res.status(400).json({ error: 'Invalid team key' });
+      }
+      
+      const teamData = await SheetService.getTeamSheetData(id, teamId);
+      res.json(teamData);
+    } catch (error) {
+      const statusCode = error.message === 'Sheet not found' ? 404 : 500;
+      res.status(statusCode).json({ error: error.message });
+    }
+  },
+
   // Get sheet by ID with assignments
   async getSheetById(req, res) {
     try {
@@ -177,13 +212,23 @@ const sheetController = {
       const { responses } = req.body;
       const user = req.user;
       
+      console.log('🚀 Submit team sheet called:');
+      console.log('  - Sheet ID:', id);
+      console.log('  - User ID:', user.id);
+      console.log('  - Team ID:', user.team_id);
+      console.log('  - Request body keys:', Object.keys(req.body));
+      console.log('  - Responses type:', typeof responses);
+      console.log('  - Responses count:', responses ? (Array.isArray(responses) ? responses.length : Object.keys(responses).length) : 0);
+      
       if (!user.team_id) {
         return res.status(400).json({ error: 'User is not assigned to any team' });
       }
 
       const result = await SheetService.submitTeamSheet(id, user.team_id, responses, user.id);
+      console.log('✅ Sheet submitted successfully:', result);
       res.json(result);
     } catch (error) {
+      console.error('❌ Error submitting team sheet:', error);
       let statusCode = 500;
       if (error.message.includes('not assigned')) statusCode = 404;
       res.status(statusCode).json({ error: error.message });
@@ -381,6 +426,31 @@ const sheetController = {
       res.json(sheets);
     } catch (error) {
       res.status(500).json({ error: error.message });
+    }
+  },
+
+  // Get detailed team sheet data (Admin only)
+  async getTeamSheetData(req, res) {
+    try {
+      const { id, teamKey } = req.params;
+      
+      // Map team key to team ID
+      const teamMap = {
+        'generation': 31,
+        'distribution': 32,
+        'transmission': 33
+      };
+      
+      const teamId = teamMap[teamKey.toLowerCase()];
+      if (!teamId) {
+        return res.status(400).json({ error: 'Invalid team key' });
+      }
+      
+      const teamData = await SheetService.getTeamSheetData(id, teamId);
+      res.json(teamData);
+    } catch (error) {
+      const statusCode = error.message === 'Sheet not found' ? 404 : 500;
+      res.status(statusCode).json({ error: error.message });
     }
   }
 };

@@ -51,14 +51,15 @@ class SheetResponseService {
       }
 
       // Verify user belongs to the team
-      const teamMemberResult = await require('../config/db').query(`
-        SELECT u.id 
-        FROM users u 
-        JOIN team_sheets ts ON u.team_id = ts.team_id 
-        WHERE u.id = $1 AND ts.id = $2
-      `, [userId, response.team_sheet_id]);
+      const db = require('../config/db');
+      const teamMemberResult = await db('users as u')
+        .join('team_sheets as ts', 'u.team_id', 'ts.team_id')
+        .where('u.id', userId)
+        .where('ts.id', response.team_sheet_id)
+        .select('u.id')
+        .first();
 
-      if (teamMemberResult.rows.length === 0) {
+      if (!teamMemberResult) {
         throw new Error('User not authorized to edit this response');
       }
 
@@ -67,29 +68,32 @@ class SheetResponseService {
       const updatedResponse = await SheetResponse.update(responseId, updateData);
 
       // Update team sheet status to in_progress if not already
-      await require('../config/db').query(`
-        UPDATE team_sheets 
-        SET status = 'in_progress', started_at = COALESCE(started_at, CURRENT_TIMESTAMP), started_by = $1
-        WHERE id = $2 AND status = 'assigned'
-      `, [userId, response.team_sheet_id]);
+      await db('team_sheets')
+        .where('id', response.team_sheet_id)
+        .where('status', 'assigned')
+        .update({
+          status: 'in_progress',
+          started_at: db.raw('COALESCE(started_at, CURRENT_TIMESTAMP)'),
+          started_by: userId
+        });
 
       // Get team and sheet info for notification
-      const notificationData = await require('../config/db').query(`
-        SELECT 
-          s.name as sheet_name,
-          t.name as team_name,
-          ts.sheet_id,
-          ts.team_id,
-          u.username as updated_by_name
-        FROM team_sheets ts
-        JOIN sheets s ON ts.sheet_id = s.id
-        JOIN teams t ON ts.team_id = t.id
-        JOIN users u ON u.id = $1
-        WHERE ts.id = $2
-      `, [userId, response.team_sheet_id]);
+      const notificationData = await db('team_sheets as ts')
+        .join('sheets as s', 'ts.sheet_id', 's.id')
+        .join('teams as t', 'ts.team_id', 't.id')
+        .join('users as u', 'u.id', userId)
+        .where('ts.id', response.team_sheet_id)
+        .select(
+          's.title as sheet_name',
+          't.name as team_name',
+          'ts.sheet_id',
+          'ts.team_id',
+          'u.username as updated_by_name'
+        )
+        .first();
 
-      if (notificationData.rows.length > 0) {
-        const { sheet_name, team_name, sheet_id, team_id, updated_by_name } = notificationData.rows[0];
+      if (notificationData) {
+        const { sheet_name, team_name, sheet_id, team_id, updated_by_name } = notificationData;
 
         // Send notification to admin about the update
         await NotificationService.createNotification({
@@ -134,57 +138,85 @@ class SheetResponseService {
 
   // Mark team responses as completed
   static async markTeamSheetCompleted(sheetId, teamId, userId) {
+    console.log('📝 markTeamSheetCompleted called:');
+    console.log('  - Sheet ID:', sheetId);
+    console.log('  - Team ID:', teamId);
+    console.log('  - User ID:', userId);
+    
     try {
+      const db = require('../config/db');
+      
       // Verify user belongs to the team
-      const teamMemberResult = await require('../config/db').query(
-        'SELECT id FROM users WHERE id = $1 AND team_id = $2',
-        [userId, teamId]
-      );
+      const teamMember = await db('users')
+        .where({ id: userId, team_id: teamId })
+        .first();
 
-      if (teamMemberResult.rows.length === 0) {
+      if (!teamMember) {
         throw new Error('User does not belong to this team');
       }
+      console.log('✅ User belongs to team');
 
       // Update team sheet status
-      const result = await require('../config/db').query(`
-        UPDATE team_sheets 
-        SET status = 'completed', completed_at = CURRENT_TIMESTAMP, completed_by = $1
-        WHERE sheet_id = $2 AND team_id = $3
-        RETURNING *
-      `, [userId, sheetId, teamId]);
+      const updatedAssignment = await db('team_sheets')
+        .where({ sheet_id: sheetId, team_id: teamId })
+        .update({
+          status: 'completed',
+          completed_at: db.fn.now(),
+          completed_by: userId
+        })
+        .returning('*');
 
-      if (result.rows.length === 0) {
+      if (updatedAssignment.length === 0) {
         throw new Error('Team sheet assignment not found');
       }
+      console.log('✅ Updated team sheet status to completed');
 
-      // Send notification to admin
-      const notificationData = await require('../config/db').query(`
-        SELECT 
-          s.name as sheet_name,
-          t.name as team_name,
-          u.username as completed_by_name
-        FROM sheets s, teams t, users u
-        WHERE s.id = $1 AND t.id = $2 AND u.id = $3
-      `, [sheetId, teamId, userId]);
+      // Get notification data
+      const notificationData = await db('sheets as s')
+        .join('teams as t', 't.id', teamId)
+        .join('users as u', 'u.id', userId)
+        .where('s.id', sheetId)
+        .select(
+          's.title as sheet_name',
+          's.title as sheet_title', 
+          't.name as team_name',
+          'u.username as completed_by_name'
+        )
+        .first();
 
-      if (notificationData.rows.length > 0) {
-        const { sheet_name, team_name, completed_by_name } = notificationData.rows[0];
+      if (notificationData) {
+        const { sheet_name, sheet_title, team_name, completed_by_name } = notificationData;
+        console.log('📧 Creating notifications for sheet completion:', { sheet_title, team_name, completed_by_name });
 
-        await NotificationService.createNotification({
-          user_id: null, // System notification
-          type: 'team_sheet_completed',
-          title: 'Team Sheet Completed',
-          message: `${team_name} has completed their work on sheet "${sheet_name}" (completed by ${completed_by_name})`,
-          data: {
-            sheet_id: sheetId,
-            team_id: teamId,
-            completed_by: userId
-          }
-        });
+        // Get all admin users
+        const adminUsers = await db('users')
+          .join('roles', 'users.role_id', 'roles.id')
+          .where('roles.name', 'admin')
+          .select('users.id');
+        
+        console.log(`👥 Found ${adminUsers.length} admin users`);
+
+        // Create notification for each admin
+        for (const admin of adminUsers) {
+          await NotificationService.createNotification({
+            user_id: userId, // User who completed the sheet
+            admin_id: admin.id, // Admin who should receive the notification
+            type: 'team_sheet_completed',
+            title: 'Team Sheet Completed',
+            message: `${team_name} team has completed their work on sheet "${sheet_title || sheet_name}" (completed by ${completed_by_name})`,
+            data: {
+              sheet_id: sheetId,
+              team_id: teamId,
+              completed_by: userId
+            }
+          });
+          console.log(`✅ Created notification for admin ${admin.id}`);
+        }
       }
 
-      return result.rows[0];
+      return updatedAssignment[0];
     } catch (error) {
+      console.error('❌ Error in markTeamSheetCompleted:', error);
       throw new Error(`Failed to mark team sheet as completed: ${error.message}`);
     }
   }
@@ -192,26 +224,29 @@ class SheetResponseService {
   // Initialize responses when a sheet is assigned to teams
   static async initializeTeamSheetResponses(sheetId, teamIds, assignedBy) {
     try {
+      const db = require('../config/db');
       const results = [];
 
       for (const teamId of teamIds) {
         // Get or create team sheet assignment
-        let teamSheetResult = await require('../config/db').query(
-          'SELECT id FROM team_sheets WHERE sheet_id = $1 AND team_id = $2',
-          [sheetId, teamId]
-        );
+        let teamSheet = await db('team_sheets')
+          .where({ sheet_id: sheetId, team_id: teamId })
+          .first();
 
         let teamSheetId;
-        if (teamSheetResult.rows.length === 0) {
+        if (!teamSheet) {
           // Create team sheet assignment
-          const newTeamSheet = await require('../config/db').query(`
-            INSERT INTO team_sheets (sheet_id, team_id, status, assigned_by)
-            VALUES ($1, $2, 'assigned', $3)
-            RETURNING id
-          `, [sheetId, teamId, assignedBy]);
-          teamSheetId = newTeamSheet.rows[0].id;
+          const newTeamSheet = await db('team_sheets')
+            .insert({
+              sheet_id: sheetId,
+              team_id: teamId,
+              status: 'assigned',
+              assigned_by: assignedBy
+            })
+            .returning(['id']);
+          teamSheetId = newTeamSheet[0].id;
         } else {
-          teamSheetId = teamSheetResult.rows[0].id;
+          teamSheetId = teamSheet.id;
         }
 
         // Initialize responses for this team

@@ -15,16 +15,33 @@ const SheetUpload = () => {
   const [uploadResult, setUploadResult] = useState(null);
   const [currentUser, setCurrentUser] = useState(null);
   const [deletingAll, setDeletingAll] = useState(false);
-  const [distributeToTeams, setDistributeToTeams] = useState(false);
+  const [sheets, setSheets] = useState([]);
+  const [loadingSheets, setLoadingSheets] = useState(false);
+  const [deletingSheet, setDeletingSheet] = useState(null);
   const navigate = useNavigate();
 
   useEffect(() => {
     loadCurrentUser();
+    loadSheets();
   }, []);
 
   const loadCurrentUser = () => {
     const user = authService.getCurrentUser();
     setCurrentUser(user);
+  };
+
+  const loadSheets = async () => {
+    if (!canUpload()) return;
+    
+    setLoadingSheets(true);
+    try {
+      const data = await sheetService.getAllSheets();
+      setSheets(data);
+    } catch (error) {
+      console.error('Failed to load sheets:', error);
+    } finally {
+      setLoadingSheets(false);
+    }
   };
 
   // Check if user has upload permissions (admin only)
@@ -71,23 +88,22 @@ const SheetUpload = () => {
     setSuccess('');
 
     try {
-      const result = await sheetService.uploadSheet(file, month, year, distributeToTeams);
+      // Always distribute to teams automatically
+      const result = await sheetService.uploadSheet(file, month, year, true);
       
-      if (distributeToTeams) {
-        setSuccess(`Successfully uploaded ${result.processedCount} entries and distributed to all teams!`);
-      } else {
-        setSuccess(`Successfully uploaded ${result.processedCount} entries!`);
-      }
+      setSuccess(`Successfully uploaded ${result.processedCount} entries and automatically distributed to all teams!`);
       
       setUploadResult(result);
       
       // Reset form
       setFile(null);
-      setDistributeToTeams(false);
       const fileInput = document.getElementById('fileInput');
       if (fileInput) {
         fileInput.value = '';
       }
+      
+      // Reload sheets list
+      loadSheets();
       
     } catch (error) {
       setError(error.message || 'Upload failed');
@@ -98,6 +114,65 @@ const SheetUpload = () => {
 
   const handleViewEntries = () => {
     navigate('/entries');
+  };
+
+  const handleDeleteSheet = async (sheetId, sheetTitle) => {
+    // Show confirmation dialog
+    const confirmed = window.confirm(
+      `Are you sure you want to delete the sheet "${sheetTitle}"? This will also remove all team assignments and responses for this sheet. This action cannot be undone.`
+    );
+    
+    if (!confirmed) {
+      return;
+    }
+
+    setDeletingSheet(sheetId);
+    setError('');
+    setSuccess('');
+
+    try {
+      await sheetService.deleteSheet(sheetId);
+      
+      toast.success(
+        `Successfully deleted sheet "${sheetTitle}" and all associated data`,
+        {
+          position: "top-right",
+          autoClose: 5000,
+        }
+      );
+      
+      setSuccess(`Sheet "${sheetTitle}" deleted successfully!`);
+      
+      // Reload sheets list
+      loadSheets();
+      
+    } catch (error) {
+      console.error('Error deleting sheet:', error);
+      const errorMessage = error.response?.data?.message || 'Failed to delete sheet';
+      setError(errorMessage);
+      
+      toast.error(errorMessage, {
+        position: "top-right",
+        autoClose: 5000,
+      });
+    } finally {
+      setDeletingSheet(null);
+    }
+  };
+
+  const formatDate = (dateString) => {
+    if (!dateString) return 'N/A';
+    return new Date(dateString).toLocaleDateString();
+  };
+
+  const getStatusBadgeClass = (status) => {
+    switch (status?.toLowerCase()) {
+      case 'completed': return 'badge bg-success';
+      case 'in_progress': return 'badge bg-warning text-dark';
+      case 'pending': return 'badge bg-secondary';
+      case 'distributed': return 'badge bg-info text-dark';
+      default: return 'badge bg-light text-dark';
+    }
   };
 
   const handleDeleteAllEntries = async () => {
@@ -325,24 +400,9 @@ const SheetUpload = () => {
                     </div>
                   )}
 
-                  <div className="mb-4">
-                    <div className="form-check">
-                      <input
-                        className="form-check-input"
-                        type="checkbox"
-                        id="distributeToTeams"
-                        checked={distributeToTeams}
-                        onChange={(e) => setDistributeToTeams(e.target.checked)}
-                      />
-                      <label className="form-check-label" htmlFor="distributeToTeams">
-                        <strong>Distribute to Teams</strong>
-                      </label>
-                      <div className="form-text">
-                        <i className="fas fa-info-circle me-1"></i>
-                        Automatically create copies of this sheet for all three operational teams 
-                        (Generation, Distribution, Transmission)
-                      </div>
-                    </div>
+                  <div className="alert alert-info mb-4">
+                    <i className="fas fa-info-circle me-2"></i>
+                    <strong>Auto-Distribution:</strong> Uploaded sheets will be automatically distributed to all operational teams (Generation, Distribution, Transmission) for completion.
                   </div>
 
                   <div className="d-grid">
@@ -365,6 +425,92 @@ const SheetUpload = () => {
                     </button>
                   </div>
                 </form>
+              )}
+            </div>
+          </div>
+
+          <div className="card mt-4">
+            <div className="card-header">
+              <h5 className="mb-0">
+                <i className="fas fa-list me-2"></i>
+                Uploaded Sheets Management
+              </h5>
+            </div>
+            <div className="card-body">
+              {loadingSheets ? (
+                <div className="text-center">
+                  <div className="spinner-border spinner-border-sm" role="status">
+                    <span className="visually-hidden">Loading...</span>
+                  </div>
+                  <p className="mt-2 text-muted">Loading sheets...</p>
+                </div>
+              ) : sheets.length === 0 ? (
+                <p className="text-muted mb-0">
+                  <i className="fas fa-info-circle me-2"></i>
+                  No sheets have been uploaded yet.
+                </p>
+              ) : (
+                <div className="table-responsive">
+                  <table className="table table-hover">
+                    <thead>
+                      <tr>
+                        <th>Sheet Title</th>
+                        <th>Description</th>
+                        <th>Status</th>
+                        <th>Upload Date</th>
+                        <th>Distributed Date</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sheets.map((sheet) => (
+                        <tr key={sheet.id}>
+                          <td>
+                            <strong>{sheet.title || 'Untitled Sheet'}</strong>
+                          </td>
+                          <td>
+                            <small className="text-muted">
+                              {sheet.description || 'No description'}
+                            </small>
+                          </td>
+                          <td>
+                            <span className={getStatusBadgeClass(sheet.status)}>
+                              {sheet.status || 'pending'}
+                            </span>
+                          </td>
+                          <td>
+                            <small>{formatDate(sheet.created_at)}</small>
+                          </td>
+                          <td>
+                            <small>{formatDate(sheet.distributed_at)}</small>
+                          </td>
+                          <td>
+                            <div className="d-flex gap-2">
+                              <button
+                                className="btn btn-danger btn-sm"
+                                onClick={() => handleDeleteSheet(sheet.id, sheet.title || 'Untitled Sheet')}
+                                disabled={deletingSheet === sheet.id}
+                                title="Delete this sheet and all associated data"
+                              >
+                                {deletingSheet === sheet.id ? (
+                                  <>
+                                    <span className="spinner-border spinner-border-sm me-1" role="status"></span>
+                                    Deleting...
+                                  </>
+                                ) : (
+                                  <>
+                                    <i className="fas fa-trash me-1"></i>
+                                    Delete
+                                  </>
+                                )}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </div>
           </div>

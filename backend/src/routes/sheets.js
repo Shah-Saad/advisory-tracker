@@ -48,5 +48,6 @@ router.get('/:id/export', requireAnyPermission(['export_sheet_data']), sheetCont
 // Admin-only team-specific sheet views
 router.get('/:id/team-views', requirePermission('read_sheets'), sheetController.getSheetByTeams);
 router.get('/:id/team/:teamId', requirePermission('read_sheets'), sheetController.getSheetForTeam);
+router.get('/:id/team-data/:teamKey', requirePermission('read_sheets'), sheetController.getTeamSheetData);
 
 module.exports = router;
