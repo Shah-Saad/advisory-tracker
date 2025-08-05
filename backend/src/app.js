@@ -17,6 +17,7 @@ const productRoutes = require('./routes/products');
 const vendorRoutes = require('./routes/vendors');
 const notificationRoutes = require('./routes/notifications');
 const passwordRoutes = require('./routes/password');
+const { router: sseRoutes } = require('./routes/sse');
 
 const app = express();
 
@@ -40,6 +41,7 @@ app.use('/api/products', productRoutes);
 app.use('/api/vendors', vendorRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/password', passwordRoutes);
+app.use('/api/sse', sseRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {

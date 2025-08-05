@@ -40,6 +40,7 @@ class SheetResponse {
         'se.vendor_name',
         'se.oem_vendor', 
         'se.cve',
+        'se.source',
         'se.risk_level as original_risk_level',
         'se.site as original_site',
         'ts.id as team_sheet_id'

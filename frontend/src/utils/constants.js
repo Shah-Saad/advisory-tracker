@@ -123,9 +123,6 @@ export const TABLE_COLUMNS = {
     { key: 'risk_level', label: 'Risk Level', sortable: true },
     { key: 'cve', label: 'CVE', sortable: false },
     { key: 'deployed_in_ke', label: 'Deployed in KE', sortable: true },
-    { key: 'patch_available', label: 'Patch Available', sortable: true },
-    { key: 'testing_status', label: 'Testing Status', sortable: true },
-    { key: 'approval_status', label: 'Approval Status', sortable: true },
     { key: 'month', label: 'Month', sortable: true },
     { key: 'year', label: 'Year', sortable: true }
   ]

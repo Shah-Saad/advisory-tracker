@@ -10,16 +10,11 @@ const Filters = () => {
     deployed_in_ke: '',
     oem_vendor: '',
     source: '',
-    cve: '',
-    patch_available: '',
-    control_verification: '',
-    testing_status: '',
-    approval_status: ''
+    cve: ''
   });
   const [filteredEntries, setFilteredEntries] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [error, setError] = useState(''); 
   const navigate = useNavigate();
 
   const months = [
@@ -31,8 +26,6 @@ const Filters = () => {
   const years = Array.from({ length: 10 }, (_, i) => currentYear - 5 + i);
 
   const riskLevels = ['Low', 'Medium', 'High', 'Critical'];
-  const yesNoOptions = ['Yes', 'No'];
-  const statusOptions = ['Pending', 'In Progress', 'Completed', 'Not Applicable'];
 
   const handleFilterChange = (field, value) => {
     setFilters({
@@ -74,11 +67,7 @@ const Filters = () => {
       deployed_in_ke: '',
       oem_vendor: '',
       source: '',
-      cve: '',
-      patch_available: '',
-      control_verification: '',
-      testing_status: '',
-      approval_status: ''
+      cve: ''
     });
     setFilteredEntries([]);
   };
@@ -132,14 +121,8 @@ const Filters = () => {
 
           {/* Filter Form */}
           <div className="card mb-4">
-            <div className="card-header d-flex justify-content-between align-items-center">
+            <div className="card-header">
               <h5 className="mb-0">Filter Criteria</h5>
-              <button
-                className="btn btn-sm btn-outline-secondary"
-                onClick={() => setShowAdvanced(!showAdvanced)}
-              >
-                {showAdvanced ? 'Hide' : 'Show'} Advanced Options
-              </button>
             </div>
             <div className="card-body">
               {/* Basic Filters */}
@@ -191,9 +174,8 @@ const Filters = () => {
                     onChange={(e) => handleFilterChange('deployed_in_ke', e.target.value)}
                   >
                     <option value="">All</option>
-                    {yesNoOptions.map((option) => (
-                      <option key={option} value={option}>{option}</option>
-                    ))}
+                    <option value="Yes">Yes</option>
+                    <option value="No">No</option>
                   </select>
                 </div>
               </div>
@@ -230,68 +212,6 @@ const Filters = () => {
                   />
                 </div>
               </div>
-
-              {/* Advanced Filters */}
-              {showAdvanced && (
-                <>
-                  <hr />
-                  <h6 className="mb-3">Advanced Options</h6>
-                  <div className="row mb-3">
-                    <div className="col-md-3">
-                      <label className="form-label">Patch Available</label>
-                      <select
-                        className="form-select"
-                        value={filters.patch_available}
-                        onChange={(e) => handleFilterChange('patch_available', e.target.value)}
-                      >
-                        <option value="">All</option>
-                        {yesNoOptions.map((option) => (
-                          <option key={option} value={option}>{option}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="col-md-3">
-                      <label className="form-label">Control Verification</label>
-                      <select
-                        className="form-select"
-                        value={filters.control_verification}
-                        onChange={(e) => handleFilterChange('control_verification', e.target.value)}
-                      >
-                        <option value="">All</option>
-                        {statusOptions.map((status) => (
-                          <option key={status} value={status}>{status}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="col-md-3">
-                      <label className="form-label">Testing Status</label>
-                      <select
-                        className="form-select"
-                        value={filters.testing_status}
-                        onChange={(e) => handleFilterChange('testing_status', e.target.value)}
-                      >
-                        <option value="">All</option>
-                        {statusOptions.map((status) => (
-                          <option key={status} value={status}>{status}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="col-md-3">
-                      <label className="form-label">Approval Status</label>
-                      <select
-                        className="form-select"
-                        value={filters.approval_status}
-                        onChange={(e) => handleFilterChange('approval_status', e.target.value)}
-                      >
-                        <option value="">All</option>
-                        {statusOptions.map((status) => (
-                          <option key={status} value={status}>{status}</option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-                </>
-              )}
 
               <div className="d-flex gap-2">
                 <button
@@ -343,12 +263,6 @@ const Filters = () => {
                         <th>CVE</th>
                         <th>Deployed in KE</th>
                         <th>Month/Year</th>
-                        {showAdvanced && (
-                          <>
-                            <th>Patch Available</th>
-                            <th>Testing Status</th>
-                          </>
-                        )}
                       </tr>
                     </thead>
                     <tbody>
@@ -380,20 +294,6 @@ const Filters = () => {
                               'N/A'
                             )}
                           </td>
-                          {showAdvanced && (
-                            <>
-                              <td>
-                                <span className={`badge ${entry.patch_available === 'Yes' ? 'bg-success' : entry.patch_available === 'No' ? 'bg-danger' : 'bg-secondary'}`}>
-                                  {entry.patch_available || 'Unknown'}
-                                </span>
-                              </td>
-                              <td>
-                                <span className={`badge ${entry.testing_status === 'Completed' ? 'bg-success' : entry.testing_status === 'In Progress' ? 'bg-warning text-dark' : 'bg-secondary'}`}>
-                                  {entry.testing_status || 'Unknown'}
-                                </span>
-                              </td>
-                            </>
-                          )}
                         </tr>
                       ))}
                     </tbody>

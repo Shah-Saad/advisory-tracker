@@ -394,8 +394,20 @@ const TeamSubmissionTable = ({ sheetId }) => {
   const getCompletionPercentage = (teamKey) => {
     if (!teamData?.team_versions) return 0;
     const teamView = teamData.team_versions.find(tv => tv.team_name.toLowerCase() === teamKey);
-    // Calculate percentage based on responses (simplified)
-    return teamView?.response_count > 0 ? Math.min(100, teamView.response_count * 10) : 0;
+    
+    // Calculate completion percentage based on assignment status
+    if (!teamView) return 0;
+    
+    switch (teamView.assignment_status?.toLowerCase()) {
+      case 'completed':
+        return 100;
+      case 'in_progress':
+        return teamView.response_count > 0 ? Math.min(75, (teamView.response_count / 100) * 100) : 25;
+      case 'assigned':
+        return teamView.response_count > 0 ? Math.min(50, (teamView.response_count / 100) * 100) : 10;
+      default:
+        return 0;
+    }
   };
 
   const getLastUpdated = (teamKey) => {
@@ -420,10 +432,40 @@ const TeamSubmissionTable = ({ sheetId }) => {
     return new Date(dateString).toLocaleString();
   };
 
-  const handleViewTeamSheet = async (teamKey) => {
-    // Open team sheet view in new tab
-    const url = `/admin/team-sheets/${sheetId}/${teamKey}`;
-    window.open(url, '_blank');
+  const handleViewTeamSheet = (teamKey) => {
+    try {
+      // Debug log
+      console.log('🔍 handleViewTeamSheet called with:', {
+        teamKey,
+        sheetId,
+        url: `/admin/team-sheets/${sheetId}/${teamKey}`
+      });
+      
+      // Validate inputs
+      if (!sheetId || !teamKey) {
+        console.error('❌ Missing required parameters:', { sheetId, teamKey });
+        alert('Error: Missing sheet ID or team key');
+        return;
+      }
+      
+      // Test if window.open is working
+      const url = `/admin/team-sheets/${sheetId}/${teamKey}`;
+      console.log('📋 About to open URL:', url);
+      
+      const newWindow = window.open(url, '_blank');
+      
+      if (newWindow) {
+        console.log('✅ window.open succeeded');
+      } else {
+        console.log('❌ window.open returned null - popup blocked?');
+        // Fallback: try to navigate in same window
+        console.log('🔄 Falling back to same-window navigation');
+        window.location.href = url;
+      }
+    } catch (error) {
+      console.error('❌ Error in handleViewTeamSheet:', error);
+      alert('Error opening team sheet view: ' + error.message);
+    }
   };
 
   if (loading) {
@@ -486,18 +528,27 @@ const TeamSubmissionTable = ({ sheetId }) => {
                   <small>{formatDate(lastUpdated)}</small>
                 </td>
                 <td>
-                  {status !== 'not_assigned' ? (
-                    <button
-                      className="btn btn-outline-primary btn-sm"
-                      onClick={() => handleViewTeamSheet(team.key)}
-                      title={`View ${team.name} team submission`}
-                    >
-                      <i className="fas fa-eye me-1"></i>
-                      View
-                    </button>
-                  ) : (
-                    <span className="text-muted">Not assigned</span>
-                  )}
+                  {(() => {
+                    const shouldShowButton = status !== 'not_assigned';
+                    console.log('🎯 Button logic for team:', team.name, {
+                      status,
+                      shouldShowButton,
+                      sheetId
+                    });
+                    
+                    return shouldShowButton ? (
+                      <button
+                        className="btn btn-outline-primary btn-sm"
+                        onClick={() => handleViewTeamSheet(team.key)}
+                        title={`View ${team.name} team submission`}
+                      >
+                        <i className="fas fa-eye me-1"></i>
+                        View
+                      </button>
+                    ) : (
+                      <span className="text-muted">Not assigned</span>
+                    );
+                  })()}
                 </td>
               </tr>
             );

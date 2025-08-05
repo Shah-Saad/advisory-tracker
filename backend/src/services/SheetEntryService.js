@@ -726,12 +726,49 @@ class SheetEntryService {
 
       console.log(`Updated entry ${id} with data:`, filteredData);
 
-      // Send notification to admins if user is provided and not an admin
-      if (user && user.role !== 'admin' && updatedEntry) {
+      // Broadcast real-time update to admin clients via SSE (replaces traditional notifications)
+      let sseUpdateSent = false;
+      try {
+        const { broadcastToAdmins } = require('../routes/sse');
+        
+        // Get additional context about the entry
+        const entryWithSheet = await db('sheet_entries')
+          .join('sheets', 'sheet_entries.sheet_id', 'sheets.id')
+          .select(
+            'sheet_entries.*',
+            'sheets.title as sheet_title',
+            'sheets.month_year'
+          )
+          .where('sheet_entries.id', id)
+          .first();
+
+        if (entryWithSheet) {
+          broadcastToAdmins({
+            type: 'entry_updated',
+            entry: entryWithSheet,
+            updatedBy: user ? {
+              id: user.id,
+              username: user.username,
+              team: user.team_name || 'Unknown'
+            } : null,
+            updatedFields: Object.keys(filteredData).filter(key => key !== 'updated_at')
+          }, 'team_sheet_updated');
+          
+          sseUpdateSent = true;
+          console.log('SSE update sent successfully');
+        }
+      } catch (sseError) {
+        console.error('Error broadcasting SSE update:', sseError);
+        sseUpdateSent = false;
+      }
+
+      // Only send traditional notification if SSE update failed (fallback)
+      if (!sseUpdateSent && user && user.role !== 'admin' && updatedEntry) {
         try {
           await NotificationService.handleEntryUpdate(updatedEntry, user);
+          console.log('Fallback notification sent (SSE unavailable)');
         } catch (notificationError) {
-          console.error('Error sending notification:', notificationError);
+          console.error('Error sending fallback notification:', notificationError);
           // Don't fail the update if notification fails
         }
       }

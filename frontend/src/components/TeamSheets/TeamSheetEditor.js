@@ -13,11 +13,53 @@ const TeamSheetEditor = () => {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [user, setUser] = useState(null);
+  const [submitEnabled, setSubmitEnabled] = useState(false);
+  const [timeRemaining, setTimeRemaining] = useState(0);
+  const [autoSaving, setAutoSaving] = useState(false);
+  const [lastSaved, setLastSaved] = useState(null);
 
   useEffect(() => {
     loadSheetData();
     setUser(authService.getCurrentUser());
   }, [sheetId]);
+
+  // Timer effect for submit button availability
+  useEffect(() => {
+    if (!sheet || !sheet.assigned_at) return;
+
+    const assignedTime = new Date(sheet.assigned_at);
+    const now = new Date();
+    const timeElapsed = now - assignedTime;
+    const oneMinuteMs = 60 * 1000; // 1 minute in milliseconds
+
+    if (timeElapsed >= oneMinuteMs) {
+      // More than 1 minute has passed
+      setSubmitEnabled(true);
+      setTimeRemaining(0);
+    } else {
+      // Less than 1 minute has passed, start countdown
+      const remaining = oneMinuteMs - timeElapsed;
+      setTimeRemaining(Math.ceil(remaining / 1000)); // Convert to seconds
+      setSubmitEnabled(false);
+
+      // Start countdown timer
+      const timer = setInterval(() => {
+        const currentTime = new Date();
+        const currentElapsed = currentTime - assignedTime;
+        
+        if (currentElapsed >= oneMinuteMs) {
+          setSubmitEnabled(true);
+          setTimeRemaining(0);
+          clearInterval(timer);
+        } else {
+          const currentRemaining = oneMinuteMs - currentElapsed;
+          setTimeRemaining(Math.ceil(currentRemaining / 1000));
+        }
+      }, 1000);
+
+      return () => clearInterval(timer);
+    }
+  }, [sheet]);
 
   const loadSheetData = async () => {
     try {
@@ -63,6 +105,21 @@ const TeamSheetEditor = () => {
     }
   };
 
+  // Auto-save individual entry changes (debounced)
+  const autoSaveEntry = async (entryId, responseData) => {
+    try {
+      setAutoSaving(true);
+      await sheetService.updateEntry(entryId, responseData);
+      setLastSaved(new Date());
+      console.log(`Auto-saved entry ${entryId}`);
+    } catch (error) {
+      console.error(`Failed to auto-save entry ${entryId}:`, error);
+      // Don't show error for auto-saves to avoid overwhelming the user
+    } finally {
+      setAutoSaving(false);
+    }
+  };
+
   const handleResponseChange = (entryId, field, value) => {
     setResponses(prev => {
       const newResponses = {
@@ -102,6 +159,40 @@ const TeamSheetEditor = () => {
 
       return newResponses;
     });
+
+    // Trigger auto-save after state update (debounced)
+    setTimeout(() => {
+      const updatedResponse = responses[entryId] ? {...responses[entryId], [field]: value} : {[field]: value};
+      
+      // Apply the same logic as above for auto-updates
+      if (field === 'deployed_in_ke' && value === 'N') {
+        updatedResponse.site = 'N/A';
+        updatedResponse.current_status = 'N/A';
+        updatedResponse.vendor_contacted = 'N/A';
+        updatedResponse.vendor_contact_date = '';
+        updatedResponse.patching_est_release_date = '';
+        updatedResponse.implementation_date = '';
+        updatedResponse.compensatory_controls_provided = 'N/A';
+        updatedResponse.compensatory_controls_details = '';
+        updatedResponse.estimated_time = 'N/A';
+        updatedResponse.patching = 'N/A';
+      }
+
+      if (field === 'vendor_contacted' && value !== 'Y') {
+        updatedResponse.vendor_contact_date = '';
+      }
+      
+      if (field === 'compensatory_controls_provided' && value !== 'Y') {
+        updatedResponse.compensatory_controls_details = '';
+      }
+      
+      if (field === 'current_status' && !['In Progress', 'Completed', 'Blocked'].includes(value)) {
+        updatedResponse.implementation_date = '';
+      }
+
+      // Auto-save the updated entry
+      autoSaveEntry(entryId, updatedResponse);
+    }, 500); // 500ms debounce
   };
 
   // Helper function to check if a field should be disabled when "Deployed in KE?" is "No"
@@ -120,6 +211,19 @@ const TeamSheetEditor = () => {
       'patching'
     ];
     return isNotDeployed && fieldsToDisable.includes(fieldName);
+  };
+
+  // Helper function to format time ago
+  const formatTimeAgo = (date) => {
+    if (!date) return '';
+    const now = new Date();
+    const diff = now - date;
+    const seconds = Math.floor(diff / 1000);
+    const minutes = Math.floor(diff / (1000 * 60));
+    
+    if (seconds < 60) return 'just now';
+    if (minutes < 60) return `${minutes}m ago`;
+    return date.toLocaleTimeString();
   };
 
   const handleSubmitSheet = async () => {
@@ -195,9 +299,24 @@ const TeamSheetEditor = () => {
         <div className="col-12">
           <div className="d-flex justify-content-between align-items-center mb-4">
             <div>
-              <h1 className="h3 mb-0">Edit Team Sheet</h1>
+              <h1 className="h3 mb-0">
+                Edit Team Sheet
+                {autoSaving && (
+                  <span className="ms-2 small text-primary">
+                    <i className="fas fa-spinner fa-spin"></i> Auto-saving...
+                  </span>
+                )}
+                {lastSaved && !autoSaving && (
+                  <span className="ms-2 small text-success">
+                    <i className="fas fa-check"></i> Saved {formatTimeAgo(lastSaved)}
+                  </span>
+                )}
+              </h1>
               <p className="text-muted">
                 {sheet.title} - {user?.team?.name || 'Your Team'}
+                <span className="ms-2 small text-info">
+                  <i className="fas fa-bolt"></i> Changes auto-save as you type
+                </span>
               </p>
             </div>
             <div className="d-flex gap-2">
@@ -216,12 +335,15 @@ const TeamSheetEditor = () => {
                 Save Draft
               </button>
               <button 
-                className="btn btn-success" 
+                className={`btn ${submitEnabled ? 'btn-success' : 'btn-secondary'}`}
                 onClick={handleSubmitSheet}
-                disabled={submitting || sheet.assignment_status === 'completed'}
+                disabled={submitting || sheet.assignment_status === 'completed' || !submitEnabled}
+                title={!submitEnabled ? `Submit will be available in ${timeRemaining} seconds` : 'Submit your completed sheet'}
               >
                 <i className="fas fa-paper-plane me-1"></i>
-                {submitting ? 'Submitting...' : 'Submit Sheet'}
+                {submitting ? 'Submitting...' : 
+                 !submitEnabled ? `Wait ${timeRemaining}s` : 
+                 'Submit Sheet'}
               </button>
             </div>
           </div>
@@ -234,6 +356,14 @@ const TeamSheetEditor = () => {
                 className="btn-close" 
                 onClick={() => setError('')}
               ></button>
+            </div>
+          )}
+
+          {!submitEnabled && timeRemaining > 0 && sheet.assignment_status !== 'completed' && (
+            <div className="alert alert-info" role="alert">
+              <i className="fas fa-clock me-2"></i>
+              <strong>Submit Timer:</strong> You can submit this sheet in <strong>{timeRemaining} seconds</strong>. 
+              Use this time to review and complete your responses.
             </div>
           )}
 

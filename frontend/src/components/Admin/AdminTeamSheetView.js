@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import sheetService from '../../services/sheetService';
+import sseService from '../../services/sseService';
 
 const AdminTeamSheetView = () => {
   const { sheetId, teamKey } = useParams();
@@ -8,15 +9,20 @@ const AdminTeamSheetView = () => {
   const [teamData, setTeamData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [isAutoRefresh, setIsAutoRefresh] = useState(true);
+  const [lastUpdated, setLastUpdated] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [sseConnected, setSseConnected] = useState(false);
+  const intervalRef = useRef(null);
 
-  useEffect(() => {
-    loadTeamSheetData();
-  }, [sheetId, teamKey]);
-
-  const loadTeamSheetData = async () => {
+  const loadTeamSheetData = useCallback(async (silent = false) => {
     try {
-      setLoading(true);
-      setError('');
+      if (!silent) {
+        setLoading(true);
+        setError('');
+      } else {
+        setRefreshing(true);
+      }
       
       // Fetch detailed team sheet data
       const detailedData = await sheetService.getTeamSheetData(sheetId, teamKey);
@@ -27,17 +33,146 @@ const AdminTeamSheetView = () => {
         teamName: teamKey.charAt(0).toUpperCase() + teamKey.slice(1)
       });
       
+      setLastUpdated(new Date());
+      
     } catch (error) {
       console.error('Error fetching team sheet data:', error);
-      setError('Failed to load team sheet data');
+      if (!silent) {
+        setError('Failed to load team sheet data');
+      }
     } finally {
-      setLoading(false);
+      if (!silent) {
+        setLoading(false);
+      } else {
+        setRefreshing(false);
+      }
     }
+  }, [sheetId, teamKey]);
+
+  useEffect(() => {
+    loadTeamSheetData();
+    
+    // Set up auto-refresh (reduced frequency since we have real-time updates)
+    if (isAutoRefresh) {
+      intervalRef.current = setInterval(() => {
+        loadTeamSheetData(true); // silent refresh
+      }, 30000); // Keep 30 seconds as backup
+    }
+
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+      }
+    };
+  }, [sheetId, teamKey, isAutoRefresh, loadTeamSheetData]);
+
+  // Set up SSE connection for real-time updates
+  useEffect(() => {
+    // Only connect if not already connected
+    if (!sseService.getConnectionStatus().isConnected) {
+      console.log('Setting up SSE connection for admin live view');
+      sseService.connect();
+    }
+
+    // Handle connection status
+    const handleSSEConnected = () => {
+      setSseConnected(true);
+      console.log('Real-time updates connected');
+    };
+
+    const handleSSEDisconnected = () => {
+      setSseConnected(false);
+      console.log('Real-time updates disconnected');
+    };
+
+    // Handle team sheet updates
+    const handleTeamSheetUpdate = (data) => {
+      console.log('Received real-time update:', data);
+      
+      // If this update is for the current sheet, refresh the data
+      if (data.data && data.data.entry && data.data.entry.sheet_id === parseInt(sheetId)) {
+        console.log('Update is for current sheet, refreshing...');
+        loadTeamSheetData(true); // Silent refresh to show the updates
+        setLastUpdated(new Date());
+      }
+    };
+
+    // Register event listeners
+    sseService.addEventListener('connected', handleSSEConnected);
+    sseService.addEventListener('team_sheet_updated', handleTeamSheetUpdate);
+    sseService.addEventListener('maxReconnectAttemptsReached', handleSSEDisconnected);
+
+    // Check initial connection status
+    if (sseService.getConnectionStatus().isConnected) {
+      setSseConnected(true);
+    }
+
+    // Cleanup on unmount
+    return () => {
+      sseService.removeEventListener('connected', handleSSEConnected);
+      sseService.removeEventListener('team_sheet_updated', handleTeamSheetUpdate);
+      sseService.removeEventListener('maxReconnectAttemptsReached', handleSSEDisconnected);
+      // Don't disconnect here as other admin views might be using it
+    };
+  }, [sheetId, loadTeamSheetData]);
+
+  const toggleAutoRefresh = () => {
+    setIsAutoRefresh(!isAutoRefresh);
+  };
+
+  const handleManualRefresh = () => {
+    loadTeamSheetData();
   };
 
   const formatDate = (dateString) => {
     if (!dateString) return 'N/A';
     return new Date(dateString).toLocaleDateString();
+  };
+
+  const formatTimeAgo = (date) => {
+    if (!date) return '';
+    const now = new Date();
+    const diff = now - date;
+    const minutes = Math.floor(diff / (1000 * 60));
+    const hours = Math.floor(diff / (1000 * 60 * 60));
+    
+    if (minutes < 1) return 'Just now';
+    if (minutes < 60) return `${minutes}m ago`;
+    if (hours < 24) return `${hours}h ago`;
+    return date.toLocaleDateString();
+  };
+
+  const getProgressPercentage = (responses) => {
+    if (!responses || responses.length === 0) return 0;
+    
+    const totalEntries = responses.length;
+    const completedEntries = responses.filter(r => {
+      // Consider an entry "completed" if it has key fields filled out
+      return r.current_status && r.vendor_contacted && 
+             ((r.deployed_in_ke === 'Y' && r.compensatory_controls_provided) || r.deployed_in_ke === 'N');
+    }).length;
+    
+    return Math.round((completedEntries / totalEntries) * 100);
+  };
+
+  const isRecentlyUpdated = (updatedAt) => {
+    if (!updatedAt) return false;
+    const now = new Date();
+    const updated = new Date(updatedAt);
+    const diffMinutes = (now - updated) / (1000 * 60);
+    return diffMinutes <= 30; // Consider "recent" if updated within last 30 minutes
+  };
+
+  const getEntryStatusColor = (response) => {
+    if (!response.current_status) return 'table-light';
+    
+    const hasKeyFields = response.vendor_contacted && 
+                        ((response.deployed_in_ke === 'Y' && response.compensatory_controls_provided) || 
+                         response.deployed_in_ke === 'N');
+    
+    if (hasKeyFields) return 'table-success';
+    if (response.current_status) return 'table-warning';
+    return 'table-light';
   };
 
   if (loading) {
@@ -79,13 +214,48 @@ const AdminTeamSheetView = () => {
           <div className="d-flex justify-content-between align-items-center mb-4">
             <div>
               <h1 className="h3 mb-0">
-                {teamData.teamName} Team - Sheet View
+                {teamData.teamName} Team - Live Sheet View
+                {refreshing && (
+                  <span className="ms-2">
+                    <div className="spinner-border spinner-border-sm text-primary" role="status">
+                      <span className="visually-hidden">Refreshing...</span>
+                    </div>
+                  </span>
+                )}
               </h1>
               <p className="text-muted">
                 {teamData.sheet?.title}
+                {lastUpdated && (
+                  <span className="ms-2 small">
+                    • Last updated: {formatTimeAgo(lastUpdated)}
+                  </span>
+                )}
+                <span className="ms-2 small">
+                  • Real-time: 
+                  <span className={`ms-1 ${sseConnected ? 'text-success' : 'text-warning'}`}>
+                    <i className={`fas ${sseConnected ? 'fa-wifi' : 'fa-wifi-slash'} me-1`}></i>
+                    {sseConnected ? 'Connected' : 'Disconnected'}
+                  </span>
+                </span>
               </p>
             </div>
             <div className="d-flex gap-2">
+              <button 
+                className={`btn btn-sm ${isAutoRefresh ? 'btn-success' : 'btn-outline-secondary'}`}
+                onClick={toggleAutoRefresh}
+                title={isAutoRefresh ? 'Real-time updates + 30s backup refresh' : 'Only real-time updates (backup refresh disabled)'}
+              >
+                <i className={`fas ${isAutoRefresh ? 'fa-sync-alt fa-spin' : 'fa-pause'} me-1`}></i>
+                {isAutoRefresh ? 'Live' : 'Paused'}
+              </button>
+              <button 
+                className="btn btn-sm btn-outline-primary" 
+                onClick={handleManualRefresh}
+                disabled={loading || refreshing}
+              >
+                <i className="fas fa-refresh me-1"></i>
+                Refresh
+              </button>
               <button 
                 className="btn btn-outline-secondary" 
                 onClick={() => navigate('/admin/team-sheets')}
@@ -113,10 +283,26 @@ const AdminTeamSheetView = () => {
             <div className="col-md-6">
               <div className="card">
                 <div className="card-header">
-                  <h6 className="mb-0">Team Assignment</h6>
+                  <h6 className="mb-0">Team Progress & Status</h6>
                 </div>
                 <div className="card-body">
-                  <p><strong>Status:</strong> 
+                  <div className="mb-3">
+                    <div className="d-flex justify-content-between align-items-center mb-1">
+                      <span><strong>Completion Progress:</strong></span>
+                      <span className="badge bg-primary">{getProgressPercentage(teamData.responses)}%</span>
+                    </div>
+                    <div className="progress">
+                      <div 
+                        className="progress-bar bg-success" 
+                        role="progressbar" 
+                        style={{width: `${getProgressPercentage(teamData.responses)}%`}}
+                        aria-valuenow={getProgressPercentage(teamData.responses)} 
+                        aria-valuemin="0" 
+                        aria-valuemax="100"
+                      ></div>
+                    </div>
+                  </div>
+                  <p><strong>Assignment Status:</strong> 
                     <span className={`ms-2 badge ${
                       teamData.assignment_status === 'completed' ? 'bg-success' :
                       teamData.assignment_status === 'in_progress' ? 'bg-warning text-dark' :
@@ -135,7 +321,16 @@ const AdminTeamSheetView = () => {
           {/* Team Responses */}
           <div className="card">
             <div className="card-header">
-              <h6 className="mb-0">Team Responses ({teamData.responses?.length || 0})</h6>
+              <div className="d-flex justify-content-between align-items-center">
+                <h6 className="mb-0">Live Team Responses ({teamData.responses?.length || 0})</h6>
+                <div className="d-flex align-items-center gap-2">
+                  <small className="text-muted">
+                    <i className="fas fa-circle text-success" style={{fontSize: '8px'}}></i>
+                    {isAutoRefresh ? ' Auto-updating every 30s' : ' Auto-update paused'}
+                  </small>
+                  {refreshing && <div className="spinner-border spinner-border-sm" role="status"></div>}
+                </div>
+              </div>
             </div>
             <div className="card-body">
               {teamData.responses && teamData.responses.length > 0 ? (
@@ -145,6 +340,7 @@ const AdminTeamSheetView = () => {
                       <tr>
                         <th>Product Name</th>
                         <th>Vendor</th>
+                        <th>Source</th>
                         <th>Risk Level</th>
                         <th>CVE</th>
                         <th>Deployed in KE?</th>
@@ -156,15 +352,49 @@ const AdminTeamSheetView = () => {
                         <th>Comments</th>
                         <th>Updated</th>
                       </tr>
+                      <tr>
+                        <th></th>
+                        <th></th>
+                        <th></th>
+                        <th></th>
+                        <th></th>
+                        <th></th>
+                        <th></th>
+                        <th></th>
+                        <th></th>
+                        <th style={{textAlign: 'center'}}>
+                          <div className="d-flex justify-content-around">
+                            <small>Est. Release Date</small>
+                            <small>Implementation Date</small>
+                          </div>
+                        </th>
+                        <th></th>
+                        <th></th>
+                        <th></th>
+                      </tr>
                     </thead>
                     <tbody>
                       {teamData.responses.map((response, index) => (
-                        <tr key={response.id || index}>
+                        <tr key={response.id || index} className={`${getEntryStatusColor(response)} ${isRecentlyUpdated(response.updated_at) ? 'border-primary border-2' : ''}`}>
                           <td>
                             <small>{response.product_name || 'N/A'}</small>
+                            {isRecentlyUpdated(response.updated_at) && (
+                              <span className="badge bg-primary ms-1" style={{fontSize: '10px'}}>
+                                <i className="fas fa-clock"></i> Updated
+                              </span>
+                            )}
                           </td>
                           <td>
                             <small>{response.vendor_name || response.oem_vendor || 'N/A'}</small>
+                          </td>
+                          <td>
+                            {response.source ? (
+                              <a href={response.source} target="_blank" rel="noopener noreferrer" className="text-primary">
+                                <small>{response.source.includes('cisa.gov') ? 'CISA Advisory' : 'Source Link'}</small>
+                              </a>
+                            ) : (
+                              <small className="text-muted">N/A</small>
+                            )}
                           </td>
                           <td>
                             <span className={`badge ${
@@ -192,12 +422,33 @@ const AdminTeamSheetView = () => {
                           </td>
                           <td>
                             <small>{response.deployed_in_ke === 'Y' ? (response.vendor_contacted || 'N/A') : 'N/A'}</small>
+                            {response.deployed_in_ke === 'Y' && response.vendor_contacted === 'Y' && response.vendor_contact_date && (
+                              <div><small className="text-muted">Contact Date: {formatDate(response.vendor_contact_date)}</small></div>
+                            )}
                           </td>
                           <td>
-                            <small>{response.deployed_in_ke === 'Y' ? (response.patching_est_release_date || 'N/A') : 'N/A'}</small>
+                            <div className="d-flex gap-1">
+                              <div className="flex-fill">
+                                {response.deployed_in_ke === 'Y' && response.patching_est_release_date ? (
+                                  <small>{formatDate(response.patching_est_release_date)}</small>
+                                ) : (
+                                  <small className="text-muted">N/A</small>
+                                )}
+                              </div>
+                              <div className="flex-fill">
+                                {response.deployed_in_ke === 'Y' && response.implementation_date ? (
+                                  <small>{formatDate(response.implementation_date)}</small>
+                                ) : (
+                                  <small className="text-muted">N/A</small>
+                                )}
+                              </div>
+                            </div>
                           </td>
                           <td>
                             <small>{response.deployed_in_ke === 'Y' ? (response.compensatory_controls_provided || 'N/A') : 'N/A'}</small>
+                            {response.deployed_in_ke === 'Y' && response.compensatory_controls_provided === 'Y' && response.compensatory_controls_details && (
+                              <div><small className="text-muted">{response.compensatory_controls_details}</small></div>
+                            )}
                           </td>
                           <td>
                             {response.comments ? (
@@ -211,7 +462,14 @@ const AdminTeamSheetView = () => {
                             )}
                           </td>
                           <td>
-                            <small>{response.updated_at ? formatDate(response.updated_at) : 'N/A'}</small>
+                            <small>{formatDate(response.updated_at) || 'N/A'}</small>
+                            {isRecentlyUpdated(response.updated_at) && (
+                              <div>
+                                <small className="text-primary">
+                                  <i className="fas fa-pulse"></i> {formatTimeAgo(new Date(response.updated_at))}
+                                </small>
+                              </div>
+                            )}
                           </td>
                         </tr>
                       ))}
