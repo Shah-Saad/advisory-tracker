@@ -68,32 +68,44 @@ const AdminTeamSheetView = () => {
 
   // Set up SSE connection for real-time updates
   useEffect(() => {
-    // Only connect if not already connected
-    if (!sseService.getConnectionStatus().isConnected) {
-      console.log('Setting up SSE connection for admin live view');
+    console.log('AdminTeamSheetView: Setting up SSE for sheet', sheetId);
+    
+    // Always ensure we have a connection - reconnect if needed
+    const connectionStatus = sseService.getConnectionStatus();
+    console.log('Current SSE status:', connectionStatus);
+    
+    if (!connectionStatus.isConnected) {
+      console.log('SSE not connected - connecting now for admin live view');
       sseService.connect();
+    } else {
+      console.log('SSE already connected - using existing connection');
+      setSseConnected(true);
     }
 
     // Handle connection status
     const handleSSEConnected = () => {
       setSseConnected(true);
-      console.log('Real-time updates connected');
+      console.log('AdminTeamSheetView: Real-time updates connected for sheet', sheetId);
     };
 
     const handleSSEDisconnected = () => {
       setSseConnected(false);
-      console.log('Real-time updates disconnected');
+      console.log('AdminTeamSheetView: Real-time updates disconnected for sheet', sheetId);
+      
+      // Don't immediately attempt to reconnect - let the SSE service handle its own reconnection logic
     };
 
     // Handle team sheet updates
     const handleTeamSheetUpdate = (data) => {
-      console.log('Received real-time update:', data);
+      console.log('AdminTeamSheetView: Received real-time update for sheet', sheetId, ':', data);
       
       // If this update is for the current sheet, refresh the data
       if (data.data && data.data.entry && data.data.entry.sheet_id === parseInt(sheetId)) {
-        console.log('Update is for current sheet, refreshing...');
+        console.log('AdminTeamSheetView: Update is for current sheet', sheetId, '- refreshing data...');
         loadTeamSheetData(true); // Silent refresh to show the updates
         setLastUpdated(new Date());
+      } else {
+        console.log('AdminTeamSheetView: Update is for different sheet', data.data?.entry?.sheet_id, '- ignoring');
       }
     };
 

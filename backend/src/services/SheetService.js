@@ -752,15 +752,54 @@ class SheetService {
       throw new Error('Team not assigned to this sheet');
     }
 
-    // Get team responses using the correct method
-    const responses = await SheetResponse.findByTeamSheet(sheetId, teamId);
+    // Get live data from sheet_entries for admin visibility
+    // This allows admins to see real-time updates as users edit entries
+    const db = require('../config/db');
+    
+    // Get team information for reference
+    const team = await db('teams').where('id', teamId).first();
+    if (!team) {
+      throw new Error('Team not found');
+    }
+
+    // First, try to get entries specifically assigned to this team
+    let responses = await db('sheet_entries')
+      .where('sheet_id', sheetId)
+      .where(function() {
+        this.where('assigned_team', team.name)
+          .orWhere('assigned_team', teamId.toString())
+          .orWhere('team', team.name)
+          .orWhere('team', teamId.toString());
+      })
+      .select('*')
+      .orderBy('id');
+
+    // If no team-specific entries found, return ALL entries for this sheet
+    // This enables admin visibility of all data during the editing phase
+    if (responses.length === 0) {
+      console.log(`No team-specific entries found, returning all entries for sheet ${sheetId} (admin view)`);
+      responses = await db('sheet_entries')
+        .where('sheet_id', sheetId)
+        .select('*')
+        .orderBy('id');
+    } else {
+      console.log(`Found ${responses.length} team-specific entries for team ${team.name} (ID: ${teamId}) in sheet ${sheetId}`);
+    }
+
+    // If still no entries, fall back to original sheet_responses method for backward compatibility
+    if (responses.length === 0) {
+      console.log(`No live entries found for sheet ${sheetId}, checking submitted responses...`);
+      responses = await SheetResponse.findByTeamSheet(sheetId, teamId);
+    }
 
     return {
       sheet,
       assignment,
       responses,
       response_count: responses.length,
-      completion_percentage: assignment.completion_percentage || 0
+      completion_percentage: assignment.completion_percentage || 0,
+      data_source: responses.length > 0 && responses[0].original_entry_id ? 'submitted_responses' : 'live_entries',
+      display_mode: responses.length > 0 && !responses[0].original_entry_id ? 'all_entries_live_view' : 'team_specific'
     };
   }
 }

@@ -5,15 +5,21 @@ class SSEService {
     this.isConnected = false;
     this.reconnectAttempts = 0;
     this.maxReconnectAttempts = 5;
-    this.reconnectDelay = 1000; // Start with 1 second
+    this.reconnectDelay = 3000; // Start with 3 seconds for more stability
     this.listeners = new Map();
+    this.reconnectTimer = null;
   }
 
   // Connect to SSE endpoint
   connect() {
     // Don't create multiple connections
-    if (this.eventSource && this.eventSource.readyState !== EventSource.CLOSED) {
-      console.log('SSE already connected or connecting');
+    if (this.eventSource && this.eventSource.readyState === EventSource.OPEN) {
+      console.log('SSE already connected');
+      return;
+    }
+
+    if (this.eventSource && this.eventSource.readyState === EventSource.CONNECTING) {
+      console.log('SSE already connecting, waiting...');
       return;
     }
 
@@ -33,64 +39,82 @@ class SSEService {
       const baseUrl = process.env.REACT_APP_API_URL || 'http://localhost:3000/api';
       const sseUrl = `${baseUrl}/sse/subscribe?token=${encodeURIComponent(token)}`;
       
-      console.log('Connecting to SSE:', sseUrl);
+      console.log('SSEService: Connecting to SSE:', sseUrl);
       this.eventSource = new EventSource(sseUrl);
       
       this.eventSource.onopen = (event) => {
-        console.log('SSE connection established');
+        console.log('SSEService: Connection established successfully');
         this.isConnected = true;
         this.reconnectAttempts = 0;
-        this.reconnectDelay = 1000;
+        this.reconnectDelay = 3000; // Reset to 3 seconds
         this.emit('connected', { timestamp: new Date() });
       };
 
       this.eventSource.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          console.log('SSE message received:', data);
+          console.log('SSEService: Message received:', data);
           
           // Emit the event to registered listeners
           this.emit(data.type, data);
           
         } catch (error) {
-          console.error('Error parsing SSE message:', error);
+          console.error('SSEService: Error parsing message:', error);
         }
       };
 
       this.eventSource.onerror = (event) => {
-        console.error('SSE connection error:', event);
+        console.error('SSEService: Connection error:', event);
         this.isConnected = false;
+        
+        // Close the current connection to clean up
+        if (this.eventSource.readyState !== EventSource.CLOSED) {
+          this.eventSource.close();
+        }
+        
+        // Clear any existing reconnect timer
+        if (this.reconnectTimer) {
+          clearTimeout(this.reconnectTimer);
+          this.reconnectTimer = null;
+        }
         
         if (this.reconnectAttempts < this.maxReconnectAttempts) {
           this.reconnectAttempts++;
-          console.log(`Attempting to reconnect (${this.reconnectAttempts}/${this.maxReconnectAttempts}) in ${this.reconnectDelay}ms`);
+          console.log(`SSEService: Attempting to reconnect (${this.reconnectAttempts}/${this.maxReconnectAttempts}) in ${this.reconnectDelay}ms`);
           
-          setTimeout(() => {
+          this.reconnectTimer = setTimeout(() => {
+            this.reconnectTimer = null;
             this.connect();
           }, this.reconnectDelay);
           
-          // Exponential backoff
-          this.reconnectDelay = Math.min(this.reconnectDelay * 2, 30000);
+          // Exponential backoff up to 30 seconds
+          this.reconnectDelay = Math.min(this.reconnectDelay * 1.5, 30000);
         } else {
-          console.error('Max reconnection attempts reached');
+          console.error('SSEService: Max reconnection attempts reached');
           this.emit('maxReconnectAttemptsReached');
         }
       };
 
     } catch (error) {
-      console.error('Error creating SSE connection:', error);
+      console.error('SSEService: Error creating connection:', error);
     }
   }
 
   // Disconnect from SSE
   disconnect() {
+    // Clear any pending reconnect timer
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    
     if (this.eventSource) {
       this.eventSource.close();
       this.eventSource = null;
     }
     this.isConnected = false;
     this.reconnectAttempts = 0;
-    console.log('SSE connection closed');
+    console.log('SSEService: Connection closed');
   }
 
   // Add event listener
