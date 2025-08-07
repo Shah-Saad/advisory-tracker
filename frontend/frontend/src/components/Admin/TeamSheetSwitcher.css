@@ -1,0 +1,118 @@
+/* Team Sheet Switcher Styles */
+.team-sheet-switcher {
+  padding: 20px 0;
+}
+
+.team-sheet-switcher .card {
+  height: 600px;
+  overflow: hidden;
+}
+
+.team-sheet-switcher .card-body {
+  padding: 15px;
+  overflow-y: auto;
+  height: calc(100% - 60px);
+}
+
+.team-sheet-switcher .list-group-item {
+  cursor: pointer;
+  border: 1px solid #dee2e6;
+  margin-bottom: 5px;
+  border-radius: 5px;
+  transition: all 0.2s ease;
+}
+
+.team-sheet-switcher .list-group-item:hover:not(.disabled) {
+  background-color: #f8f9fa;
+  border-color: #6c757d;
+}
+
+.team-sheet-switcher .list-group-item.active {
+  background-color: #0d6efd;
+  border-color: #0d6efd;
+  color: white;
+}
+
+.team-sheet-switcher .list-group-item.disabled {
+  background-color: #f8f9fa;
+  color: #6c757d;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.team-sheet-switcher .badge {
+  font-size: 0.75rem;
+  padding: 0.25rem 0.5rem;
+}
+
+.team-sheet-preview {
+  font-size: 0.9rem;
+}
+
+.team-sheet-preview .bg-light {
+  background-color: #f8f9fa !important;
+}
+
+.team-sheet-preview ul.list-unstyled li {
+  margin-bottom: 3px;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .team-sheet-switcher .col-md-4 {
+    margin-bottom: 20px;
+  }
+  
+  .team-sheet-switcher .card {
+    height: auto;
+    min-height: 300px;
+  }
+}
+
+/* Custom scrollbar for webkit browsers */
+.team-sheet-switcher .card-body::-webkit-scrollbar {
+  width: 6px;
+}
+
+.team-sheet-switcher .card-body::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 3px;
+}
+
+.team-sheet-switcher .card-body::-webkit-scrollbar-thumb {
+  background: #888;
+  border-radius: 3px;
+}
+
+.team-sheet-switcher .card-body::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
+/* Loading states */
+.team-sheet-switcher .spinner-border-sm {
+  width: 1rem;
+  height: 1rem;
+}
+
+/* Status badges */
+.team-sheet-switcher .bg-success {
+  background-color: #198754 !important;
+}
+
+.team-sheet-switcher .bg-warning {
+  background-color: #ffc107 !important;
+  color: #000 !important;
+}
+
+.team-sheet-switcher .bg-primary {
+  background-color: #0d6efd !important;
+}
+
+.team-sheet-switcher .bg-info {
+  background-color: #0dcaf0 !important;
+  color: #000 !important;
+}
+
+.team-sheet-switcher .bg-secondary {
+  background-color: #6c757d !important;
+}

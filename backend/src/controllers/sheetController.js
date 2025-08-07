@@ -27,11 +27,12 @@ const sheetController = {
     try {
       const { id, teamKey } = req.params;
       
-      // Map team key to team ID
+      // Map team key to team ID (using correct team IDs from database)
       const teamMap = {
-        'generation': 31,
-        'distribution': 32,
-        'transmission': 33
+        'generation': 44,
+        'distribution': 41,
+        'transmission': 42,
+        'general': 43
       };
       
       const teamId = teamMap[teamKey.toLowerCase()];
@@ -434,11 +435,12 @@ const sheetController = {
     try {
       const { id, teamKey } = req.params;
       
-      // Map team key to team ID
+      // Map team key to team ID (using correct team IDs from database)
       const teamMap = {
-        'generation': 31,
-        'distribution': 32,
-        'transmission': 33
+        'generation': 44,
+        'distribution': 41,
+        'transmission': 42,
+        'general': 43
       };
       
       const teamId = teamMap[teamKey.toLowerCase()];

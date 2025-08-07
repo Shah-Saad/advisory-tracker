@@ -19,7 +19,6 @@ import AdminTeamSheetView from './components/Admin/AdminTeamSheetView';
 import NotificationPanel from './components/Admin/NotificationPanel';
 import TeamSheets from './components/TeamSheets/TeamSheets';
 import TeamSheetEditor from './components/TeamSheets/TeamSheetEditor';
-import SheetEditorWithLocking from './components/TeamSheets/SheetEditorWithLocking';
 import authService from './services/authService';
 
 import './App.css';
@@ -184,9 +183,6 @@ function App() {
                   )}
                   {user && user.role !== 'admin' && (
                     <Route path="/team-sheets/:sheetId/edit" element={<TeamSheetEditor />} />
-                  )}
-                  {user && user.role !== 'admin' && (
-                    <Route path="/team-sheets/:sheetId/edit-with-locking" element={<SheetEditorWithLocking user={user} />} />
                   )}
                   <Route path="/filters" element={<Filters />} />
                   {user && user.role === 'admin' && (

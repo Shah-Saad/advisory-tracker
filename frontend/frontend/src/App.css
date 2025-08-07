@@ -1,0 +1,127 @@
+.App {
+  text-align: center;
+}
+
+.App-header {
+  background-color: #282c34;
+  padding: 20px;
+  color: white;
+}
+
+.navbar-custom {
+  background-color: #0d6efd;
+}
+
+.navbar-custom .navbar-brand,
+.navbar-custom .nav-link {
+  color: white !important;
+}
+
+.navbar-custom .nav-link:hover {
+  color: #cce7ff !important;
+}
+
+.dashboard-card {
+  transition: transform 0.2s;
+  cursor: pointer;
+}
+
+.dashboard-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+
+.upload-area {
+  border: 2px dashed #007bff;
+  border-radius: 10px;
+  padding: 40px;
+  text-align: center;
+  background-color: #f8f9fa;
+  transition: all 0.3s ease;
+}
+
+.upload-area:hover {
+  background-color: #e9ecef;
+  border-color: #0056b3;
+}
+
+.upload-area.dragover {
+  background-color: #cce7ff;
+  border-color: #0056b3;
+}
+
+/* Notification highlight animation */
+@keyframes pulse {
+  0% {
+    box-shadow: 0 0 15px rgba(255, 193, 7, 0.6);
+  }
+  50% {
+    box-shadow: 0 0 25px rgba(255, 193, 7, 0.9);
+  }
+  100% {
+    box-shadow: 0 0 15px rgba(255, 193, 7, 0.6);
+  }
+}
+
+.entry-card {
+  border-left: 4px solid #007bff;
+  margin-bottom: 15px;
+}
+
+.entry-card.risk-critical {
+  border-left-color: #dc3545;
+}
+
+.entry-card.risk-high {
+  border-left-color: #fd7e14;
+}
+
+.entry-card.risk-medium {
+  border-left-color: #ffc107;
+}
+
+.entry-card.risk-low {
+  border-left-color: #198754;
+}
+
+.badge-deployed-y {
+  background-color: #198754;
+}
+
+.badge-deployed-n {
+  background-color: #dc3545;
+}
+
+.filter-panel {
+  background-color: #f8f9fa;
+  border-radius: 10px;
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+.stats-card {
+  border: none;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #007bff, #0056b3);
+  color: white;
+}
+
+.stats-card h3 {
+  font-size: 2.5rem;
+  font-weight: bold;
+  margin-bottom: 0;
+}
+
+.btn-primary-custom {
+  background: linear-gradient(135deg, #007bff, #0056b3);
+  border: none;
+  border-radius: 25px;
+  padding: 10px 30px;
+  font-weight: 500;
+  transition: all 0.3s ease;
+}
+
+.btn-primary-custom:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 15px rgba(0,123,255,0.3);
+}
