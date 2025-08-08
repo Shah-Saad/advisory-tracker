@@ -8,7 +8,7 @@ const Filters = () => {
     year: '',
     risk_level: '',
     deployed_in_ke: '',
-    oem_vendor: '',
+    vendor: '',
     source: '',
     cve: ''
   });
@@ -65,7 +65,7 @@ const Filters = () => {
       year: '',
       risk_level: '',
       deployed_in_ke: '',
-      oem_vendor: '',
+      vendor: '',
       source: '',
       cve: ''
     });
@@ -182,13 +182,13 @@ const Filters = () => {
 
               <div className="row mb-3">
                 <div className="col-md-4">
-                  <label className="form-label">OEM/Vendor</label>
+                  <label className="form-label">Vendor</label>
                   <input
                     type="text"
                     className="form-control"
                     placeholder="Enter vendor name..."
-                    value={filters.oem_vendor}
-                    onChange={(e) => handleFilterChange('oem_vendor', e.target.value)}
+                    value={filters.vendor}
+                    onChange={(e) => handleFilterChange('vendor', e.target.value)}
                   />
                 </div>
                 <div className="col-md-4">

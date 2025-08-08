@@ -8,20 +8,49 @@ class NotificationService {
    */
   static async createNotification(notificationData) {
     try {
-      const [notification] = await db('notifications')
-        .insert({
-          user_id: notificationData.user_id,
-          admin_id: notificationData.admin_id,
-          type: notificationData.type,
-          title: notificationData.title,
-          message: notificationData.message,
-          entry_id: notificationData.entry_id,
-          is_read: false,
-          created_at: new Date()
-        })
-        .returning('*');
-      
-      return notification;
+      // If no specific admin_id is provided, notify all admins
+      if (!notificationData.admin_id) {
+        const admins = await db('users')
+          .join('roles', 'users.role_id', 'roles.id')
+          .where('roles.name', 'admin')
+          .select('users.id');
+        
+        const notifications = [];
+        for (const admin of admins) {
+          const [notification] = await db('notifications')
+            .insert({
+              user_id: notificationData.user_id,
+              admin_id: admin.id,
+              type: notificationData.type,
+              title: notificationData.title,
+              message: notificationData.message,
+              data: JSON.stringify(notificationData.data || {}),
+              entry_id: notificationData.entry_id,
+              is_read: false,
+              created_at: new Date()
+            })
+            .returning('*');
+          
+          notifications.push(notification);
+        }
+        return notifications;
+      } else {
+        const [notification] = await db('notifications')
+          .insert({
+            user_id: notificationData.user_id,
+            admin_id: notificationData.admin_id,
+            type: notificationData.type,
+            title: notificationData.title,
+            message: notificationData.message,
+            data: JSON.stringify(notificationData.data || {}),
+            entry_id: notificationData.entry_id,
+            is_read: false,
+            created_at: new Date()
+          })
+          .returning('*');
+        
+        return notification;
+      }
     } catch (error) {
       console.error('Error creating notification:', error);
       throw error;

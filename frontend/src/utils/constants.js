@@ -109,7 +109,7 @@ export const STORAGE_KEYS = {
 // Table Columns Configuration
 export const TABLE_COLUMNS = {
   BASIC: [
-    { key: 'oem_vendor', label: 'OEM/Vendor', sortable: true },
+    { key: 'oem_vendor', label: 'Vendor', sortable: true },
     { key: 'source', label: 'Source', sortable: true },
     { key: 'risk_level', label: 'Risk Level', sortable: true },
     { key: 'cve', label: 'CVE', sortable: false },
@@ -118,7 +118,7 @@ export const TABLE_COLUMNS = {
     { key: 'year', label: 'Year', sortable: true }
   ],
   EXTENDED: [
-    { key: 'oem_vendor', label: 'OEM/Vendor', sortable: true },
+    { key: 'oem_vendor', label: 'Vendor', sortable: true },
     { key: 'source', label: 'Source', sortable: true },
     { key: 'risk_level', label: 'Risk Level', sortable: true },
     { key: 'cve', label: 'CVE', sortable: false },

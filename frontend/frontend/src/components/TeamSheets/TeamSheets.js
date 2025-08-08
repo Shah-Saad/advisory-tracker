@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import sheetService from '../../services/sheetService';
+import ProgressUpdateModal from './ProgressUpdateModal';
+import VulnerabilityGroupModal from './VulnerabilityGroupModal';
 
 const TeamSheets = ({ user }) => {
   const [sheets, setSheets] = useState([]);
@@ -8,7 +10,14 @@ const TeamSheets = ({ user }) => {
   const [error, setError] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [siteFilter, setSiteFilter] = useState('all');
+  const [viewMode, setViewMode] = useState('my_entries'); // 'my_entries', 'all_entries', 'by_vulnerability'
   const [availableSites, setAvailableSites] = useState([]);
+  
+  // Modal states
+  const [progressModalOpen, setProgressModalOpen] = useState(false);
+  const [vulnerabilityModalOpen, setVulnerabilityModalOpen] = useState(false);
+  const [selectedEntry, setSelectedEntry] = useState(null);
+  const [modalLoading, setModalLoading] = useState(false);
 
   const loadTeamSheets = useCallback(async () => {
     try {
@@ -29,47 +38,74 @@ const TeamSheets = ({ user }) => {
         return;
       }
       
-      const filterStatus = statusFilter === 'all' ? null : statusFilter;
-      const data = await sheetService.getMyTeamSheets(filterStatus);
-      
-      console.log('📊 Raw data from API:', data);
-      
       // Check if user is from generation team
       const isGenerationTeam = user?.team_name?.toLowerCase().includes('generation');
       
       console.log('👤 User team check:', {
         userTeamName: user?.team_name,
         isGenerationTeam,
-        dataLength: data?.length || 0
+        loadingData: true
       });
       
-      // For all teams, flatten entries from all sheets for table view
-      const allEntries = [];
-      (data || []).forEach(sheet => {
-        if (sheet.entries && Array.isArray(sheet.entries)) {
-          sheet.entries.forEach(entry => {
-            allEntries.push({
-              ...entry,
-              sheet_id: sheet.id,
-              sheet_title: sheet.title,
-              sheet_status: sheet.status
+      if (isGenerationTeam) {
+        // For generation team, use the new generation API endpoints
+        const filters = {
+          view_mode: viewMode,
+          status: statusFilter === 'all' ? null : statusFilter,
+          site: siteFilter === 'all' ? null : siteFilter
+        };
+        
+        const data = await sheetService.getGenerationEntries(viewMode, filters);
+        console.log('📊 Generation team data from API:', data);
+        
+        setSheets(data || []);
+        
+        // Extract unique sites for filtering
+        const sites = [...new Set(data.map(entry => entry.site || entry.assigned_to_site || entry.distribution_site).filter(Boolean))];
+        setAvailableSites(sites);
+        
+        console.log('🎯 Generation team data processed:', {
+          totalEntries: data?.length || 0,
+          availableSites: sites.length,
+          sampleEntry: data?.[0],
+          sampleSites: sites.slice(0, 3)
+        });
+      } else {
+        // For other teams, use the existing team sheets API
+        const filterStatus = statusFilter === 'all' ? null : statusFilter;
+        const data = await sheetService.getMyTeamSheets(filterStatus);
+        
+        console.log('📊 Regular team data from API:', data);
+        
+        // For all teams, flatten entries from all sheets for table view
+        const allEntries = [];
+        (data || []).forEach(sheet => {
+          if (sheet.entries && Array.isArray(sheet.entries)) {
+            sheet.entries.forEach(entry => {
+              allEntries.push({
+                ...entry,
+                sheet_id: sheet.id,
+                sheet_title: sheet.title,
+                sheet_status: sheet.status
+              });
             });
-          });
-        }
-      });
-      
-      setSheets(allEntries);
-      
-      // Extract unique sites for filtering
-      const sites = [...new Set(allEntries.map(entry => entry.site).filter(Boolean))];
-      setAvailableSites(sites);
-      
-      console.log('🎯 Team data processed:', {
-        totalEntries: allEntries.length,
-        availableSites: sites.length,
-        sampleEntry: allEntries[0],
-        sampleSites: sites.slice(0, 3)
-      });
+          }
+        });
+        
+        setSheets(allEntries.length > 0 ? allEntries : data || []);
+        
+        // Extract unique sites for filtering
+        const sites = [...new Set(allEntries.map(entry => entry.site).filter(Boolean))];
+        setAvailableSites(sites);
+        
+        console.log('🎯 Regular team data processed:', {
+          totalEntries: allEntries.length,
+          totalSheets: data?.length || 0,
+          availableSites: sites.length,
+          sampleEntry: allEntries[0] || data?.[0],
+          sampleSites: sites.slice(0, 3)
+        });
+      }
     } catch (err) {
       console.error('Failed to load team sheets:', err);
       if (err.message && err.message.includes('not assigned to any team')) {
@@ -80,7 +116,7 @@ const TeamSheets = ({ user }) => {
     } finally {
       setLoading(false);
     }
-  }, [statusFilter, siteFilter, user?.team_id, user?.role, user?.team_name]);
+  }, [statusFilter, siteFilter, viewMode, user?.team_id, user?.role, user?.team_name]);
 
   useEffect(() => {
     loadTeamSheets();
@@ -95,22 +131,101 @@ const TeamSheets = ({ user }) => {
     }
   };
 
-  const handleSelectEntry = async (sheetId, entryId) => {
+  const handleSelectEntry = async (originalEntryId, entryId) => {
     try {
-      const result = await sheetService.selectEntry(sheetId, entryId);
-      console.log('✅ Select entry result:', result);
-      await loadTeamSheets(); // Reload to show updated status
-      setError(''); // Clear any previous errors
+      // For generation team, this should create a user copy instead of just selecting
+      if (isGenerationTeam) {
+        const result = await sheetService.claimEntryForUser(originalEntryId, user.id);
+        console.log('✅ Claimed entry result:', result);
+        await loadTeamSheets(); // Reload to show updated status
+        setError(''); // Clear any previous errors
+      } else {
+        // Regular selection for other teams  
+        const result = await sheetService.selectEntry(originalEntryId, entryId);
+        console.log('✅ Select entry result:', result);
+        await loadTeamSheets();
+        setError('');
+      }
     } catch (err) {
-      console.error('❌ Select entry error:', err);
-      const errorMessage = err?.error || err?.message || 'Failed to select entry';
-      setError(`Selection failed: ${errorMessage}`);
+      console.error('❌ Entry action error:', err);
+      const errorMessage = err?.error || err?.message || 'Failed to process entry';
+      setError(`Action failed: ${errorMessage}`);
+    }
+  };
+
+  const handleUpdateProgress = async (entryId) => {
+    try {
+      // Find the entry and open the progress modal
+      const entry = sheets.find(s => s.id === entryId);
+      if (entry) {
+        setSelectedEntry(entry);
+        setProgressModalOpen(true);
+      }
+    } catch (err) {
+      setError('Failed to open progress update: ' + err.message);
+    }
+  };
+
+  const handleSaveProgress = async (progressData) => {
+    try {
+      setModalLoading(true);
+      await sheetService.updateEntryProgress(selectedEntry.id, progressData);
+      setProgressModalOpen(false);
+      setSelectedEntry(null);
+      await loadTeamSheets(); // Reload data
+      setError(''); // Clear any errors
+    } catch (err) {
+      setError('Failed to update progress: ' + (err.message || 'Unknown error'));
+    } finally {
+      setModalLoading(false);
+    }
+  };
+
+  const handleMarkAsPatched = async (entryId) => {
+    try {
+      const confirmed = window.confirm(
+        'Are you sure this vulnerability has been patched? This will close the entry and notify the admin.'
+      );
+      if (confirmed) {
+        await sheetService.markEntryAsPatched(entryId);
+        await loadTeamSheets();
+        // This should also trigger an admin notification
+      }
+    } catch (err) {
+      setError('Failed to mark as patched: ' + err.message);
+    }
+  };
+
+  const handleReleaseEntry = async (entryId) => {
+    try {
+      const confirmed = window.confirm(
+        'Are you sure you want to release this entry? It will become available for others to claim.'
+      );
+      if (confirmed) {
+        await sheetService.releaseEntry(entryId);
+        await loadTeamSheets();
+      }
+    } catch (err) {
+      setError('Failed to release entry: ' + err.message);
+    }
+  };
+
+  const handleViewVulnerabilityGroup = async (vulnerabilityId) => {
+    try {
+      // Find the entry to get vulnerability info
+      const entry = sheets.find(s => s.id === vulnerabilityId || s.original_id === vulnerabilityId);
+      if (entry) {
+        setSelectedEntry(entry);
+        setVulnerabilityModalOpen(true);
+      }
+    } catch (err) {
+      setError('Failed to load vulnerability group: ' + err.message);
     }
   };
 
   const isGenerationTeam = user?.team_name?.toLowerCase().includes('generation');
 
-  // Filter sheets/entries based on current filters
+  // Filter sheets/entries based on current filters and viewMode
   const filteredSheets = React.useMemo(() => {
     let filtered = sheets;
     
@@ -118,8 +233,31 @@ const TeamSheets = ({ user }) => {
       totalSheets: sheets.length,
       siteFilter,
       statusFilter,
+      viewMode,
       isGenerationTeam
     });
+    
+    // For generation team, apply view mode filtering first
+    if (isGenerationTeam) {
+      switch (viewMode) {
+        case 'my_entries':
+          filtered = filtered.filter(entry => entry.assigned_to === user?.id);
+          break;
+        case 'all_entries':
+          // Show all entries (no additional filtering by view mode)
+          break;
+        case 'by_vulnerability':
+          // Group entries by vulnerability - this would need special handling
+          // For now, show all entries
+          break;
+        case 'team_overview':
+          // Show all entries with team perspective
+          break;
+        default:
+          break;
+      }
+      console.log(`🎯 After view mode filter (${viewMode}):`, filtered.length);
+    }
     
     // Apply site filter for all teams
     if (siteFilter !== 'all') {
@@ -133,8 +271,10 @@ const TeamSheets = ({ user }) => {
         // For generation team, filter by entry selection status
         filtered = filtered.filter(entry => {
           if (statusFilter === 'available') return !entry.assigned_to;
-          if (statusFilter === 'selected') return entry.assigned_to === user?.id;
+          if (statusFilter === 'claimed') return entry.assigned_to === user?.id;
           if (statusFilter === 'assigned') return entry.assigned_to && entry.assigned_to !== user?.id;
+          if (statusFilter === 'pending_patch') return entry.progress_status === 'awaiting_patch';
+          if (statusFilter === 'patched') return entry.progress_status === 'patched';
           return true;
         });
       } else {
@@ -151,7 +291,7 @@ const TeamSheets = ({ user }) => {
     
     console.log('✅ Final filtered results:', filtered.length);
     return filtered;
-  }, [sheets, siteFilter, statusFilter, isGenerationTeam, user?.id]);
+  }, [sheets, siteFilter, statusFilter, viewMode, isGenerationTeam, user?.id]);
 
   const getStatusBadgeClass = (status) => {
     switch (status?.toLowerCase()) {
@@ -227,7 +367,26 @@ const TeamSheets = ({ user }) => {
 
           {/* Filters */}
           <div className="row mb-3">
-            <div className="col-md-4">
+            {isGenerationTeam && (
+              <div className="col-md-3">
+                <div className="input-group">
+                  <span className="input-group-text">
+                    <i className="fas fa-eye"></i>
+                  </span>
+                  <select 
+                    className="form-select"
+                    value={viewMode}
+                    onChange={(e) => setViewMode(e.target.value)}
+                  >
+                    <option value="my_entries">My Claimed Entries</option>
+                    <option value="all_entries">All Available Entries</option>
+                    <option value="by_vulnerability">Group by Vulnerability</option>
+                    <option value="team_overview">Team Progress Overview</option>
+                  </select>
+                </div>
+              </div>
+            )}
+            <div className={`col-md-${isGenerationTeam ? '3' : '4'}`}>
               <div className="input-group">
                 <span className="input-group-text">
                   <i className="fas fa-filter"></i>
@@ -241,8 +400,10 @@ const TeamSheets = ({ user }) => {
                   <option value="assigned">Assigned</option>
                   <option value="in_progress">In Progress</option>
                   <option value="completed">Completed</option>
-                  {isGenerationTeam && <option value="available">Available to Pick</option>}
-                  {isGenerationTeam && <option value="selected">Selected by Me</option>}
+                  {isGenerationTeam && <option value="available">Available to Claim</option>}
+                  {isGenerationTeam && <option value="claimed">Claimed by Me</option>}
+                  {isGenerationTeam && <option value="pending_patch">Pending Patch</option>}
+                  {isGenerationTeam && <option value="patched">Patched & Closed</option>}
                 </select>
               </div>
             </div>
@@ -311,12 +472,11 @@ const TeamSheets = ({ user }) => {
                             <th>Risk Level</th>
                             <th>CVE</th>
                             <th>Deployed in KE</th>
-                            <th>Patching</th>
-                            <th>Vendor Contacted</th>
-                            <th>Compensatory Controls</th>
-                            <th>Status</th>
-                            <th>Comments</th>
-                            <th>Month/Year</th>
+                            <th>Site</th>
+                            <th>Claimed By</th>
+                            <th>Progress Status</th>
+                            <th>Last Updated</th>
+                            <th>Patching Status</th>
                             <th>Actions</th>
                           </tr>
                         </thead>
@@ -359,80 +519,116 @@ const TeamSheets = ({ user }) => {
                                 </span>
                               </td>
                               <td>
-                                {entry.patching_est_release_date ? 
-                                  formatDate(entry.patching_est_release_date) : 
-                                  'Not Applicable'
-                                }
-                              </td>
-                              <td>
-                                <span className={`badge ${entry.vendor_contacted === 'Y' ? 'bg-success' : 'bg-secondary'}`}>
-                                  {entry.vendor_contacted === 'Y' ? 'Yes' : 'No'}
+                                <span className="badge bg-info">
+                                  {entry.site || entry.assigned_to_site || user?.site || 'Not specified'}
                                 </span>
                               </td>
                               <td>
-                                <span className={`badge ${entry.compensatory_controls_provided === 'Y' ? 'bg-success' : 'bg-secondary'}`}>
-                                  {entry.compensatory_controls_provided === 'Y' ? 'Yes' : 'No'}
-                                </span>
+                                {entry.assigned_to ? (
+                                  <div>
+                                    <strong>{entry.assigned_to_name || 'Unknown User'}</strong>
+                                    <br />
+                                    <small className="text-muted">{entry.assigned_to_site || 'Unknown Site'}</small>
+                                  </div>
+                                ) : (
+                                  <span className="text-muted">Available</span>
+                                )}
                               </td>
                               <td>
                                 <span className={`badge ${
-                                  entry.assigned_to === user?.id ? 'bg-warning text-dark' :
-                                  entry.assigned_to ? 'bg-secondary' : 'bg-light text-dark'
+                                  entry.progress_status === 'investigating' ? 'bg-warning' :
+                                  entry.progress_status === 'awaiting_patch' ? 'bg-info' :
+                                  entry.progress_status === 'testing_patch' ? 'bg-primary' :
+                                  entry.progress_status === 'patched' ? 'bg-success' :
+                                  'bg-light text-dark'
                                 }`}>
-                                  {entry.assigned_to === user?.id ? 'Selected by Me' :
-                                   entry.assigned_to ? 'Selected by Other' : 'Available'}
+                                  {entry.progress_status || 'Not Started'}
                                 </span>
                               </td>
                               <td>
-                                <div className="text-truncate" style={{ maxWidth: '150px' }} title={entry.comments}>
-                                  {entry.comments || 'N/A'}
-                                </div>
+                                {entry.last_updated ? formatDate(entry.last_updated) : 'N/A'}
                               </td>
                               <td>
-                                {entry.sheet_title ? new Date().toLocaleDateString('en-US', { 
-                                  year: 'numeric', 
-                                  month: 'short' 
-                                }) : 'N/A'}
+                                {entry.patching_est_release_date ? (
+                                  <div>
+                                    <div>ETA: {formatDate(entry.patching_est_release_date)}</div>
+                                    {entry.patching_status && (
+                                      <small className="text-muted">{entry.patching_status}</small>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <span className="text-muted">No ETA</span>
+                                )}
                               </td>
                               <td>
                                 <div className="btn-group" role="group">
-                                  {!entry.assigned_to && (
+                                  {/* Available to claim */}
+                                  {!entry.assigned_to && viewMode === 'all_entries' && (
                                     <button 
                                       className="btn btn-success btn-sm"
-                                      onClick={() => handleSelectEntry(entry.sheet_id, entry.id)}
-                                      title="Pick this entry"
+                                      onClick={() => handleSelectEntry(entry.original_id || entry.id, entry.id)}
+                                      title="Claim this entry for your site"
                                     >
                                       <i className="fas fa-hand-pointer"></i>
                                     </button>
                                   )}
                                   
+                                  {/* User's claimed entries */}
                                   {entry.assigned_to === user?.id && (
                                     <>
-                                      <button 
-                                        className="btn btn-warning btn-sm"
-                                        onClick={() => handleSelectEntry(entry.sheet_id, entry.id)}
-                                        title="Unpick this entry"
-                                      >
-                                        <i className="fas fa-times"></i>
-                                      </button>
-                                      <button 
+                                      <Link
+                                        to={`/team-sheets/${entry.sheet_id}/edit-with-locking`}
                                         className="btn btn-primary btn-sm"
                                         title="Edit this entry"
                                       >
                                         <i className="fas fa-edit"></i>
+                                      </Link>
+                                      
+                                      <button 
+                                        className="btn btn-info btn-sm"
+                                        onClick={() => handleUpdateProgress(entry.id)}
+                                        title="Update progress"
+                                      >
+                                        <i className="fas fa-clipboard-list"></i>
+                                      </button>
+                                      
+                                      <button 
+                                        className="btn btn-success btn-sm"
+                                        onClick={() => handleMarkAsPatched(entry.id)}
+                                        title="Mark as patched and close"
+                                      >
+                                        <i className="fas fa-check-circle"></i>
+                                      </button>
+                                      
+                                      <button 
+                                        className="btn btn-warning btn-sm"
+                                        onClick={() => handleReleaseEntry(entry.id)}
+                                        title="Release this entry"
+                                      >
+                                        <i className="fas fa-times"></i>
                                       </button>
                                     </>
                                   )}
                                   
+                                  {/* Entries claimed by others */}
                                   {entry.assigned_to && entry.assigned_to !== user?.id && (
                                     <button 
-                                      className="btn btn-secondary btn-sm"
+                                      className="btn btn-outline-secondary btn-sm"
                                       disabled
-                                      title="Entry is locked by another user"
+                                      title={`Claimed by ${entry.assigned_to_name || 'another user'} at ${entry.assigned_to_site || 'unknown site'}`}
                                     >
-                                      <i className="fas fa-lock"></i>
+                                      <i className="fas fa-user-check"></i>
                                     </button>
                                   )}
+                                  
+                                  {/* View vulnerability group */}
+                                  <button 
+                                    className="btn btn-outline-info btn-sm"
+                                    onClick={() => handleViewVulnerabilityGroup(entry.original_id || entry.id)}
+                                    title="View all instances of this vulnerability"
+                                  >
+                                    <i className="fas fa-layer-group"></i>
+                                  </button>
                                 </div>
                               </td>
                             </tr>
@@ -645,6 +841,29 @@ const TeamSheets = ({ user }) => {
           </div>
         </div>
       </div>
+
+      {/* Progress Update Modal */}
+      <ProgressUpdateModal
+        isOpen={progressModalOpen}
+        onClose={() => {
+          setProgressModalOpen(false);
+          setSelectedEntry(null);
+        }}
+        entry={selectedEntry}
+        onSave={handleSaveProgress}
+        loading={modalLoading}
+      />
+
+      {/* Vulnerability Group Modal */}
+      <VulnerabilityGroupModal
+        isOpen={vulnerabilityModalOpen}
+        onClose={() => {
+          setVulnerabilityModalOpen(false);
+          setSelectedEntry(null);
+        }}
+        vulnerabilityId={selectedEntry?.id || selectedEntry?.original_id}
+        vulnerabilityInfo={selectedEntry}
+      />
     </div>
   );
 };

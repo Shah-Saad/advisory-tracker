@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate, Link } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, Link, useParams } from 'react-router-dom';
 import { ToastContainer } from 'react-toastify';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import 'bootstrap/dist/js/bootstrap.bundle.min.js';
@@ -8,12 +8,12 @@ import 'react-toastify/dist/ReactToastify.css';
 // Import components from the correct paths
 import Login from './components/Auth/Login';
 import ChangePassword from './components/Auth/ChangePassword';
-import Dashboard from './components/Dashboard/Dashboard';
+import { AdminProtectedRoute, TeamProtectedRoute } from './components/Auth/ProtectedRoute';
+import EnhancedAdminDashboard from './components/Admin/EnhancedAdminDashboard';
+import TeamDashboard from './components/Dashboard/TeamDashboard';
 import SheetUpload from './components/SheetUpload/SheetUpload';
-import EntryList from './components/EntryList/EntryList';
 import Filters from './components/Filters/Filters';
 import AdminUserManagement from './components/Admin/AdminUserManagement';
-import TeamManagement from './components/Admin/TeamManagement';
 import TeamSheetSwitcher from './components/Admin/TeamSheetSwitcher';
 import AdminTeamSheetView from './components/Admin/AdminTeamSheetView';
 import NotificationPanel from './components/Admin/NotificationPanel';
@@ -23,6 +23,12 @@ import SheetEditorWithLocking from './components/TeamSheets/SheetEditorWithLocki
 import authService from './services/authService';
 
 import './App.css';
+
+// Redirect component for non-admin users trying to access regular edit
+const RedirectToEditWithLocking = () => {
+  const { sheetId } = useParams();
+  return <Navigate to={`/team-sheets/${sheetId}/edit-with-locking`} replace />;
+};
 
 function App() {
   const [user, setUser] = useState(null);
@@ -84,7 +90,13 @@ function App() {
                   {user && user.role === 'admin' && (
                     <Link className="nav-link text-white" to="/dashboard">
                       <i className="fas fa-tachometer-alt me-1"></i>
-                      Dashboard
+                      Admin Dashboard
+                    </Link>
+                  )}
+                  {user && user.role !== 'admin' && (
+                    <Link className="nav-link text-white" to="/team-dashboard">
+                      <i className="fas fa-users me-1"></i>
+                      Team Dashboard
                     </Link>
                   )}
                   {user && user.role === 'admin' && (
@@ -93,15 +105,9 @@ function App() {
                       Upload
                     </Link>
                   )}
-                  {user && user.role === 'admin' && (
-                    <Link className="nav-link text-white" to="/entries">
-                      <i className="fas fa-list me-1"></i>
-                      Entries
-                    </Link>
-                  )}
                   {user && user.role !== 'admin' && (
                     <Link className="nav-link text-white" to="/my-sheets">
-                      <i className="fas fa-file-alt me-1"></i>
+                      <i className="fas fa-clipboard-list me-1"></i>
                       My Sheets
                     </Link>
                   )}
@@ -109,12 +115,6 @@ function App() {
                     <Link className="nav-link text-white" to="/admin/users">
                       <i className="fas fa-users-cog me-1"></i>
                       Users
-                    </Link>
-                  )}
-                  {user && user.role === 'admin' && (
-                    <Link className="nav-link text-white" to="/admin/teams">
-                      <i className="fas fa-users me-1"></i>
-                      Teams
                     </Link>
                   )}
                   {user && user.role === 'admin' && (
@@ -174,26 +174,56 @@ function App() {
                 </div>
               ) : (
                 <Routes>
-                  <Route path="/dashboard" element={<Dashboard user={user} />} />
+                  {/* Admin-only Dashboard Route */}
+                  <Route path="/dashboard" element={
+                    <AdminProtectedRoute user={user}>
+                      <EnhancedAdminDashboard user={user} />
+                    </AdminProtectedRoute>
+                  } />
+                  
+                  {/* Team Dashboard Route */}
+                  <Route path="/team-dashboard" element={
+                    <TeamProtectedRoute user={user}>
+                      <TeamDashboard user={user} />
+                    </TeamProtectedRoute>
+                  } />
+                  
+                  {/* Admin-only Upload Route */}
                   {user && user.role === 'admin' && (
                     <Route path="/upload" element={<SheetUpload />} />
                   )}
-                  <Route path="/entries" element={<EntryList />} />
+                  
+                  {/* Team member routes */}
                   {user && user.role !== 'admin' && (
                     <Route path="/my-sheets" element={<TeamSheets user={user} />} />
                   )}
-                  {user && user.role !== 'admin' && (
-                    <Route path="/team-sheets/:sheetId/edit" element={<TeamSheetEditor />} />
-                  )}
+                  {/* Team members can only access edit-with-locking route */}
                   {user && user.role !== 'admin' && (
                     <Route path="/team-sheets/:sheetId/edit-with-locking" element={<SheetEditorWithLocking user={user} />} />
                   )}
-                  <Route path="/filters" element={<Filters />} />
+                  
+                  {/* Redirect non-admin users from regular edit to edit-with-locking */}
+                  {user && user.role !== 'admin' && (
+                    <Route 
+                      path="/team-sheets/:sheetId/edit" 
+                      element={<RedirectToEditWithLocking />} 
+                    />
+                  )}
+                  
+                  {/* Admin can access both edit routes */}
                   {user && user.role === 'admin' && (
-                    <Route path="/admin/users" element={<AdminUserManagement />} />
+                    <Route path="/team-sheets/:sheetId/edit" element={<TeamSheetEditor />} />
                   )}
                   {user && user.role === 'admin' && (
-                    <Route path="/admin/teams" element={<TeamManagement />} />
+                    <Route path="/team-sheets/:sheetId/edit-with-locking" element={<SheetEditorWithLocking user={user} />} />
+                  )}
+                  
+                  {/* Filters accessible to all */}
+                  <Route path="/filters" element={<Filters />} />
+                  
+                  {/* Admin management routes */}
+                  {user && user.role === 'admin' && (
+                    <Route path="/admin/users" element={<AdminUserManagement />} />
                   )}
                   {user && user.role === 'admin' && (
                     <Route path="/admin/team-sheets" element={<TeamSheetSwitcher />} />
@@ -201,10 +231,12 @@ function App() {
                   {user && user.role === 'admin' && (
                     <Route path="/admin/team-sheets/:sheetId/:teamKey" element={<AdminTeamSheetView />} />
                   )}
+                  
+                  {/* Default redirect based on role */}
                   <Route path="/" element={
                     user && user.role === 'admin' 
                       ? <Navigate to="/dashboard" />
-                      : <Navigate to="/my-sheets" />
+                      : <Navigate to="/team-dashboard" />
                   } />
                 </Routes>
               )}

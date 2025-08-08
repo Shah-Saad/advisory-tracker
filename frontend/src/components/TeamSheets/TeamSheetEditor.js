@@ -18,6 +18,46 @@ const TeamSheetEditor = () => {
   const [autoSaving, setAutoSaving] = useState(false);
   const [lastSaved, setLastSaved] = useState(null);
 
+  // Real-time sync for collaborative editing
+  useEffect(() => {
+    const eventSource = new EventSource(`${process.env.REACT_APP_API_URL || 'http://localhost:3000/api'}/sse/subscribe?token=${localStorage.getItem('token')}`);
+    
+    eventSource.onopen = () => {
+      console.log('✅ Real-time sync connected for sheet editor');
+    };
+
+    eventSource.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      
+      if (data.type === 'entry_updated' && data.data?.entry) {
+        const updatedEntry = data.data.entry;
+        const updatedBy = data.data.updatedBy;
+        
+        // Only sync if the update was made by someone else
+        if (updatedBy?.id !== user?.id) {
+          console.log(`🔄 Syncing entry ${updatedEntry.id} updated by ${updatedBy?.name || updatedBy?.email}`);
+          
+          // Update the specific entry in our responses state
+          setResponses(prev => ({
+            ...prev,
+            [updatedEntry.id]: {
+              ...prev[updatedEntry.id],
+              ...updatedEntry
+            }
+          }));
+        }
+      }
+    };
+
+    eventSource.onerror = (error) => {
+      console.warn('⚠️ Real-time sync error:', error);
+    };
+
+    return () => {
+      eventSource.close();
+    };
+  }, [user]);
+
   useEffect(() => {
     loadSheetData();
     setUser(authService.getCurrentUser());
@@ -109,11 +149,25 @@ const TeamSheetEditor = () => {
   const autoSaveEntry = async (entryId, responseData) => {
     try {
       setAutoSaving(true);
-      await sheetService.updateEntry(entryId, responseData);
+      console.log(`Auto-saving entry ${entryId} with data:`, responseData);
+      
+      // Add cache-busting timestamp to prevent caching issues
+      const entryDataWithTimestamp = {
+        ...responseData,
+        _timestamp: Date.now()
+      };
+      await sheetService.updateEntry(entryId, entryDataWithTimestamp);
       setLastSaved(new Date());
-      console.log(`Auto-saved entry ${entryId}`);
+      console.log(`✅ Auto-saved entry ${entryId} successfully`);
+      
+      // Immediately force a state update to reflect changes in UI
+      setResponses(prev => ({
+        ...prev,
+        [entryId]: responseData
+      }));
+      
     } catch (error) {
-      console.error(`Failed to auto-save entry ${entryId}:`, error);
+      console.error(`❌ Failed to auto-save entry ${entryId}:`, error);
       // Don't show error for auto-saves to avoid overwhelming the user
     } finally {
       setAutoSaving(false);
@@ -121,6 +175,8 @@ const TeamSheetEditor = () => {
   };
 
   const handleResponseChange = (entryId, field, value) => {
+    console.log(`🔄 Changing field "${field}" to "${value}" for entry ${entryId}`);
+    
     setResponses(prev => {
       const newResponses = {
         ...prev,
@@ -132,6 +188,7 @@ const TeamSheetEditor = () => {
 
       // Auto-mark columns as "N/A" when "Deployed in KE?" is "No"
       if (field === 'deployed_in_ke' && value === 'N') {
+        console.log(`📝 Setting all fields to N/A for entry ${entryId} because deployed_in_ke = N`);
         newResponses[entryId].site = 'N/A';
         newResponses[entryId].current_status = 'N/A';
         newResponses[entryId].vendor_contacted = 'N/A';
@@ -142,6 +199,7 @@ const TeamSheetEditor = () => {
         newResponses[entryId].compensatory_controls_details = '';
         newResponses[entryId].estimated_time = 'N/A';
         newResponses[entryId].patching = 'N/A';
+        console.log(`✅ Updated response for entry ${entryId}:`, newResponses[entryId]);
       }
 
       // Clear related fields when parent field changes
@@ -151,48 +209,26 @@ const TeamSheetEditor = () => {
       
       if (field === 'compensatory_controls_provided' && value !== 'Y') {
         newResponses[entryId].compensatory_controls_details = '';
+        newResponses[entryId].estimated_time = '';
       }
       
       if (field === 'current_status' && !['In Progress', 'Completed', 'Blocked'].includes(value)) {
         newResponses[entryId].implementation_date = '';
       }
 
+      // Clear patching-related fields when patching is set to "No" or "N/A"
+      if (field === 'patching' && (value === 'N' || value === 'N/A' || value === 'No')) {
+        newResponses[entryId].patching_est_release_date = '';
+        newResponses[entryId].implementation_date = '';
+      }
+
+      // Immediately auto-save with the new response data
+      setTimeout(() => {
+        autoSaveEntry(entryId, newResponses[entryId]);
+      }, 100); // Reduced to 100ms for faster response
+
       return newResponses;
     });
-
-    // Trigger auto-save after state update (debounced)
-    setTimeout(() => {
-      const updatedResponse = responses[entryId] ? {...responses[entryId], [field]: value} : {[field]: value};
-      
-      // Apply the same logic as above for auto-updates
-      if (field === 'deployed_in_ke' && value === 'N') {
-        updatedResponse.site = 'N/A';
-        updatedResponse.current_status = 'N/A';
-        updatedResponse.vendor_contacted = 'N/A';
-        updatedResponse.vendor_contact_date = '';
-        updatedResponse.patching_est_release_date = '';
-        updatedResponse.implementation_date = '';
-        updatedResponse.compensatory_controls_provided = 'N/A';
-        updatedResponse.compensatory_controls_details = '';
-        updatedResponse.estimated_time = 'N/A';
-        updatedResponse.patching = 'N/A';
-      }
-
-      if (field === 'vendor_contacted' && value !== 'Y') {
-        updatedResponse.vendor_contact_date = '';
-      }
-      
-      if (field === 'compensatory_controls_provided' && value !== 'Y') {
-        updatedResponse.compensatory_controls_details = '';
-      }
-      
-      if (field === 'current_status' && !['In Progress', 'Completed', 'Blocked'].includes(value)) {
-        updatedResponse.implementation_date = '';
-      }
-
-      // Auto-save the updated entry
-      autoSaveEntry(entryId, updatedResponse);
-    }, 500); // 500ms debounce
   };
 
   // Helper function to check if a field should be disabled when "Deployed in KE?" is "No"
@@ -248,9 +284,12 @@ const TeamSheetEditor = () => {
 
   const handleSaveDraft = async () => {
     try {
-      // Update each entry individually
+      // Update each entry individually with cache-busting
       for (const entryId in responses) {
-        const responseData = responses[entryId];
+        const responseData = {
+          ...responses[entryId],
+          _timestamp: Date.now() // Add cache-busting timestamp
+        };
         console.log(`Saving draft for entry ${entryId}:`, responseData);
         
         // Log specific date fields

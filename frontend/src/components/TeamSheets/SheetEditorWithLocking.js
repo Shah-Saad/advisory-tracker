@@ -104,9 +104,9 @@ const SheetEditorWithLocking = ({ user }) => {
       comments: entry.comments || '',
       status: entry.current_status || entry.status || 'Not Applicable',
       site: entry.site || '',
-      estimated_release_date: entry.patching_est_release_date || '',
+      patching_est_release_date: entry.patching_est_release_date || '',
       implementation_date: entry.implementation_date || '',
-      estimated_time: entry.vendor_contact_date || ''
+      vendor_contact_date: entry.vendor_contact_date || ''
     });
     setShowEditModal(true);
   };
@@ -379,7 +379,7 @@ const SheetEditorWithLocking = ({ user }) => {
                         ...prev, 
                         vendor_contacted: isContacted,
                         // Reset date field if changing to No
-                        estimated_time: isContacted ? prev.estimated_time : ''
+                        vendor_contact_date: isContacted ? prev.vendor_contact_date : ''
                       }));
                     }}
                   >
@@ -391,11 +391,11 @@ const SheetEditorWithLocking = ({ user }) => {
               {editingEntry.vendor_contacted && (
                 <Col md={6}>
                   <Form.Group className="mb-3">
-                    <Form.Label>Date</Form.Label>
+                    <Form.Label>Vendor Contact Date</Form.Label>
                     <Form.Control
                       type="date"
-                      value={editingEntry.estimated_time || ''}
-                      onChange={(e) => setEditingEntry(prev => ({ ...prev, estimated_time: e.target.value }))}
+                      value={editingEntry.vendor_contact_date || ''}
+                      onChange={(e) => setEditingEntry(prev => ({ ...prev, vendor_contact_date: e.target.value }))}
                     />
                   </Form.Group>
                 </Col>
@@ -413,9 +413,9 @@ const SheetEditorWithLocking = ({ user }) => {
                       setEditingEntry(prev => ({ 
                         ...prev, 
                         patching: patchingValue,
-                        // Reset date fields if changing to Not Applicable
-                        estimated_release_date: (patchingValue !== 'Not Applicable' && editingEntry.deployed_in_ke) ? prev.estimated_release_date : '',
-                        implementation_date: (patchingValue !== 'Not Applicable' && editingEntry.deployed_in_ke) ? prev.implementation_date : ''
+                        // Reset date fields if changing to No or Not Applicable
+                        patching_est_release_date: (patchingValue === 'Yes' && editingEntry.deployed_in_ke) ? prev.patching_est_release_date : '',
+                        implementation_date: (patchingValue === 'Yes' && editingEntry.deployed_in_ke) ? prev.implementation_date : ''
                       }));
                     }}
                   >
@@ -425,22 +425,21 @@ const SheetEditorWithLocking = ({ user }) => {
                   </Form.Select>
                 </Form.Group>
               </Col>
-              {editingEntry.patching !== 'Not Applicable' && editingEntry.deployed_in_ke && (
+            </Row>
+
+            {/* Show both date fields side by side when patching is "Yes" */}
+            {editingEntry.patching === 'Yes' && editingEntry.deployed_in_ke && (
+              <Row>
                 <Col md={6}>
                   <Form.Group className="mb-3">
                     <Form.Label>Est. Release Date</Form.Label>
                     <Form.Control
                       type="date"
-                      value={editingEntry.estimated_release_date || ''}
-                      onChange={(e) => setEditingEntry(prev => ({ ...prev, estimated_release_date: e.target.value }))}
+                      value={editingEntry.patching_est_release_date || ''}
+                      onChange={(e) => setEditingEntry(prev => ({ ...prev, patching_est_release_date: e.target.value }))}
                     />
                   </Form.Group>
                 </Col>
-              )}
-            </Row>
-
-            {editingEntry.patching !== 'Not Applicable' && editingEntry.deployed_in_ke && (
-              <Row>
                 <Col md={6}>
                   <Form.Group className="mb-3">
                     <Form.Label>Implementation Date</Form.Label>
@@ -451,17 +450,6 @@ const SheetEditorWithLocking = ({ user }) => {
                     />
                   </Form.Group>
                 </Col>
-                <Col md={6}>
-                  <Form.Group className="mb-3">
-                    <Form.Label>Est. Time</Form.Label>
-                    <Form.Control
-                      type="text"
-                      value={editingEntry.estimated_time || ''}
-                      onChange={(e) => setEditingEntry(prev => ({ ...prev, estimated_time: e.target.value }))}
-                      placeholder="e.g., 2 weeks, 1 month"
-                    />
-                  </Form.Group>
-                </Col>
               </Row>
             )}
 
@@ -469,13 +457,34 @@ const SheetEditorWithLocking = ({ user }) => {
               <Form.Label>Compensatory Controls Provided</Form.Label>
               <Form.Select
                 value={editingEntry.compensatory_controls || 'Not Applicable'}
-                onChange={(e) => setEditingEntry(prev => ({ ...prev, compensatory_controls: e.target.value }))}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setEditingEntry(prev => ({ 
+                    ...prev, 
+                    compensatory_controls: value,
+                    // Reset estimated time if changing to No or Not Applicable
+                    estimated_time: value === 'Yes' ? prev.estimated_time : ''
+                  }));
+                }}
               >
                 <option value="Not Applicable">Not Applicable</option>
                 <option value="Yes">Yes</option>
                 <option value="No">No</option>
               </Form.Select>
             </Form.Group>
+
+            {/* Only show estimated time field when compensatory controls is "Yes" */}
+            {editingEntry.compensatory_controls === 'Yes' && (
+              <Form.Group className="mb-3">
+                <Form.Label>Est. Time</Form.Label>
+                <Form.Control
+                  type="text"
+                  value={editingEntry.estimated_time || ''}
+                  onChange={(e) => setEditingEntry(prev => ({ ...prev, estimated_time: e.target.value }))}
+                  placeholder="e.g., 2 weeks, 1 month"
+                />
+              </Form.Group>
+            )}
 
             <Form.Group className="mb-3">
               <Form.Label>Comments</Form.Label>

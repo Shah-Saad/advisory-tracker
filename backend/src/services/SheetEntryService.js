@@ -12,9 +12,8 @@ class SheetEntryService {
       const columnMapping = {
         // Basic product information
         'Product Name': 'product_name',
-        'Product Category': 'product_category', 
-        'Vendor Name': 'vendor_name',
         'OEM/Vendor': 'oem_vendor',
+        'Vendor Name': 'oem_vendor', // Map vendor_name to oem_vendor to consolidate
         'Source': 'source',
         
         // Location and deployment
@@ -37,7 +36,6 @@ class SheetEntryService {
         'Patching Est. Release Date': 'patching_est_release_date',
         'Implementation Date': 'implementation_date',
         'Implementation Time': 'implementation_date', // Alternative header
-        'Resolution Date': 'resolution_date',
         'Testing Date': 'testing_date',
         'Approval Date': 'approval_date',
         'Compliance Deadline': 'compliance_deadline',
@@ -127,6 +125,8 @@ class SheetEntryService {
               if (dbColumn && row[key] !== null && row[key] !== undefined && row[key] !== '') {
                 let value = String(row[key]).trim();
                 
+                console.log(`Processing column "${key}" -> "${dbColumn}" with value: "${value}"`);
+                
                 // Handle specific data transformations
                 if (dbColumn.includes('date') && value) {
                   // Ensure date format is correct
@@ -157,6 +157,9 @@ class SheetEntryService {
                 // Only set the value if it's not null after processing
                 if (value !== null) {
                   entry[dbColumn] = value;
+                  if (dbColumn === 'oem_vendor') {
+                    console.log(`✅ Successfully set oem_vendor to: "${value}"`);
+                  }
                 }
               }
             });
@@ -166,6 +169,8 @@ class SheetEntryService {
               const dbColumn = columnMapping[header];
               if (dbColumn && row[colIndex] !== null && row[colIndex] !== undefined && row[colIndex] !== '') {
                 let value = String(row[colIndex]).trim();
+                
+                console.log(`Processing array column "${header}" (index ${colIndex}) -> "${dbColumn}" with value: "${value}"`);
                 
                 // Apply same transformations as above
                 if (dbColumn.includes('date') && value) {
@@ -194,6 +199,9 @@ class SheetEntryService {
                 // Only set the value if it's not null after processing
                 if (value !== null) {
                   entry[dbColumn] = value;
+                  if (dbColumn === 'oem_vendor') {
+                    console.log(`✅ Successfully set oem_vendor from array to: "${value}"`);
+                  }
                 }
               }
             });
@@ -213,7 +221,13 @@ class SheetEntryService {
           }
 
           // Ensure we have some minimal data before saving
-          if (entry.product_name || entry.oem_vendor || entry.source) {
+          if (entry.product_name || entry.vendor_name || entry.source) {
+            console.log(`Entry ${index + 1} to be saved:`, {
+              product_name: entry.product_name,
+              oem_vendor: entry.oem_vendor,
+              vendor_name: entry.vendor_name,
+              source: entry.source
+            });
             entries.push(entry);
           } else {
             console.warn(`Skipping row ${index + 1} - insufficient data`);
@@ -382,7 +396,7 @@ class SheetEntryService {
             }
 
             // Ensure we have minimal data
-            if (entry.product_name || entry.oem_vendor || entry.source) {
+            if (entry.product_name || entry.vendor_name || entry.source) {
               teamEntries.push(entry);
             }
           } catch (rowError) {
@@ -432,9 +446,7 @@ class SheetEntryService {
     return {
       // Basic product information
       'Product Name': 'product_name',
-      'Product Category': 'product_category', 
       'Vendor Name': 'vendor_name',
-      'OEM/Vendor': 'oem_vendor',
       'Source': 'source',
       
       // Location and deployment
@@ -457,7 +469,6 @@ class SheetEntryService {
       'Patching Est. Release Date': 'patching_est_release_date',
       'Implementation Date': 'implementation_date',
       'Implementation Time': 'implementation_date',
-      'Resolution Date': 'resolution_date',
       'Testing Date': 'testing_date',
       'Approval Date': 'approval_date',
       'Compliance Deadline': 'compliance_deadline',

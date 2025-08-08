@@ -86,19 +86,7 @@
             </select>
         </div>
         
-        <div style="margin-top: 10px;">
-            <label for="categoryFilter">Filter by Product Category:</label>
-            <select id="categoryFilter" onchange="filterByCategory()">
-                <option value="">All Categories</option>
-                <option value="Distribution Equipment">Distribution Equipment</option>
-                <option value="Transmission Equipment">Transmission Equipment</option>
-                <option value="Generation Equipment">Generation Equipment</option>
-                <option value="Protection Systems">Protection Systems</option>
-                <option value="Monitoring Systems">Monitoring Systems</option>
-                <option value="Software">Software</option>
-                <option value="Other">Other</option>
-            </select>
-        </div>
+
     </div>
     
     <div id="results"></div>
@@ -307,33 +295,7 @@
             }
         }
 
-        async function filterByCategory() {
-            const category = document.getElementById('categoryFilter').value;
-            if (!category) {
-                getAllEntries();
-                return;
-            }
-            
-            if (!authToken) {
-                const loginSuccess = await login();
-                if (!loginSuccess) return;
-            }
-            
-            try {
-                showResults('<div style="text-align: center;">🔍 Filtering by category...</div>');
-                
-                const response = await fetch(`http://localhost:3000/api/sheet-entries/filter?product_category=${encodeURIComponent(category)}`, {
-                    headers: {
-                        'Authorization': `Bearer ${authToken}`
-                    }
-                });
-                
-                const entries = await response.json();
-                displayEntries(entries, `Entries in Category: ${category}`);
-            } catch (error) {
-                showError(`Failed to filter entries: ${error.message}`);
-            }
-        }
+
 
         async function loadVendors() {
             if (!authToken) {
@@ -369,8 +331,6 @@
                     <div class="entry">
                         <h4>📌 Entry ${index + 1}</h4>
                         <p><strong>Product:</strong> ${entry.product_name || 'N/A'}</p>
-                        ${entry.product_code ? `<p><strong>Product Code:</strong> ${entry.product_code}</p>` : ''}
-                        ${entry.product_category ? `<p><strong>Category:</strong> ${entry.product_category}</p>` : ''}
                         ${entry.vendor_name ? `<p><strong>Vendor:</strong> ${entry.vendor_name}</p>` : ''}
                         ${entry.product_price ? `<p><strong>Price:</strong> KSh ${parseFloat(entry.product_price).toLocaleString()}</p>` : ''}
                         <p><strong>Location:</strong> ${entry.location || 'N/A'}</p>

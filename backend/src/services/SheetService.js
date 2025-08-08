@@ -299,10 +299,10 @@ class SheetService {
         
         // Only include fields that actually exist in the current database schema
         const actualValidColumns = [
-          'product_name', 'vendor_name', 'oem_vendor', 'site', 'status', 'current_status',
+          'product_name', 'vendor_name', 'site', 'status', 'current_status',
           'deployed_in_ke', 'risk_level', 'cve', 'date', 'vendor_contact_date',
           'patching_est_release_date', 'implementation_date', 'estimated_completion_date',
-          'resolution_date', 'vendor_contacted', 'compensatory_controls_provided',
+          'vendor_contacted', 'compensatory_controls_provided',
           'compensatory_controls_details', 'estimated_time', 'comments'
         ];
         

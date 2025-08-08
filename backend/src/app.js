@@ -18,6 +18,10 @@ const productRoutes = require('./routes/products');
 const vendorRoutes = require('./routes/vendors');
 const notificationRoutes = require('./routes/notifications');
 const passwordRoutes = require('./routes/password');
+const generationRoutes = require('./routes/generation');
+const reportsRoutes = require('./routes/reports');
+const teamResponseRoutes = require('./routes/team-responses');
+const dashboardRoutes = require('./routes/dashboard');
 const { router: sseRoutes } = require('./routes/sse');
 
 const app = express();
@@ -41,8 +45,12 @@ app.use('/api/sheet-entries', sheetEntryRoutes);
 app.use('/api/entry-locking', entryLockingRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/vendors', vendorRoutes);
+app.use('/api/team-responses', teamResponseRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/password', passwordRoutes);
+app.use('/api/generation', generationRoutes);
+app.use('/api/reports', reportsRoutes);
+app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/sse', sseRoutes);
 
 // Health check endpoint

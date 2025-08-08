@@ -38,7 +38,6 @@ class SheetResponse {
         'sr.*',
         'se.product_name',
         'se.vendor_name',
-        'se.oem_vendor', 
         'se.cve',
         'se.source',
         'se.risk_level as original_risk_level',
@@ -56,7 +55,6 @@ class SheetResponse {
       original_entry_id,
       product_name,
       vendor_name,
-      oem_vendor,
       site,
       status,
       current_status,
@@ -68,7 +66,6 @@ class SheetResponse {
       patching_est_release_date,
       implementation_date,
       estimated_completion_date,
-      resolution_date,
       vendor_contacted,
       compensatory_controls_provided,
       compensatory_controls_details,
@@ -79,10 +76,10 @@ class SheetResponse {
 
     const result = await db.query(`
       INSERT INTO sheet_responses (
-        team_sheet_id, original_entry_id, product_name, vendor_name, oem_vendor,
-        site, status, current_status, deployed_in_ke, risk_level, cve,
-        date, vendor_contact_date, patching_est_release_date, implementation_date,
-        estimated_completion_date, resolution_date, vendor_contacted,
+              team_sheet_id, original_entry_id, product_name, vendor_name,
+      site, status, current_status, deployed_in_ke, risk_level, cve,
+      date, vendor_contact_date, patching_est_release_date, implementation_date,
+      estimated_completion_date, vendor_contacted,
         compensatory_controls_provided, compensatory_controls_details,
         estimated_time, comments, updated_by, created_at, updated_at
       ) VALUES (
@@ -90,10 +87,10 @@ class SheetResponse {
         $17, $18, $19, $20, $21, $22, $23, NOW(), NOW()
       ) RETURNING *
     `, [
-      team_sheet_id, original_entry_id, product_name, vendor_name, oem_vendor,
+      team_sheet_id, original_entry_id, product_name, vendor_name,
       site, status, current_status, deployed_in_ke, risk_level, cve,
       date, vendor_contact_date, patching_est_release_date, implementation_date,
-      estimated_completion_date, resolution_date, vendor_contacted,
+      estimated_completion_date, vendor_contacted,
       compensatory_controls_provided, compensatory_controls_details,
       estimated_time, comments, updated_by
     ]);

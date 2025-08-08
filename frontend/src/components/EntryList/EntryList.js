@@ -297,7 +297,7 @@ const EntryList = () => {
 
   // Check if user can edit specific fields
   const canEditEntry = () => {
-    return currentUser && (currentUser.role === 'admin' || currentUser.role === 'manager' || currentUser.role === 'user');
+    return currentUser && (currentUser.role === 'admin' || currentUser.role === 'team_lead' || currentUser.role === 'team_member');
   };
 
   const getRiskBadgeClass = (riskLevel) => {
@@ -526,10 +526,10 @@ const EntryList = () => {
                             scope="col" 
                             rowSpan="2"
                             style={{ cursor: 'pointer', verticalAlign: 'middle' }}
-                            onClick={() => handleSort('oem_vendor')}
-                          >
-                            OEM/Vendor
-                            {sortField === 'oem_vendor' && (
+                                            onClick={() => handleSort('vendor_name')}
+              >
+                Vendor
+                {sortField === 'vendor_name' && (
                               <i className={`fas fa-sort-${sortDirection === 'asc' ? 'up' : 'down'} ms-1`}></i>
                             )}
                           </th>
@@ -613,7 +613,7 @@ const EntryList = () => {
                               boxShadow: '0 0 15px rgba(255, 193, 7, 0.6)'
                             } : {}}
                           >
-                            <td>{entry.oem_vendor || 'N/A'}</td>
+                            <td>{entry.vendor_name || 'N/A'}</td>
                             <td>{entry.product_name || 'N/A'}</td>
                             <td>{renderSourceLink(entry.source)}</td>
                             <td>
@@ -987,7 +987,7 @@ const EntryList = () => {
                       </h6>
                       <div className="mb-3">
                         <label className="form-label fw-bold">OEM/Vendor:</label>
-                        <p className="mb-1">{viewingEntry.oem_vendor || 'N/A'}</p>
+                        <p className="mb-1">{viewingEntry.vendor_name || 'N/A'}</p>
                       </div>
                       <div className="mb-3">
                         <label className="form-label fw-bold">Source:</label>
@@ -1018,10 +1018,7 @@ const EntryList = () => {
                         <label className="form-label fw-bold">Product Name:</label>
                         <p className="mb-1">{viewingEntry.product_name || 'N/A'}</p>
                       </div>
-                      <div className="mb-3">
-                        <label className="form-label fw-bold">Product Category:</label>
-                        <p className="mb-1">{viewingEntry.product_category || 'N/A'}</p>
-                      </div>
+                      
                     </div>
 
                     {/* Status & Deployment */}
@@ -1103,10 +1100,7 @@ const EntryList = () => {
                           </div>
                         </div>
                         <div className="col-md-4">
-                          <div className="mb-3">
-                            <label className="form-label fw-bold">Resolution Date:</label>
-                            <p className="mb-1">{viewingEntry.resolution_date || 'N/A'}</p>
-                          </div>
+                          
                         </div>
                       </div>
                       

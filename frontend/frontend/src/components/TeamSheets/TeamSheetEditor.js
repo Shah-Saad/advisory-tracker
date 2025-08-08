@@ -109,9 +109,19 @@ const TeamSheetEditor = () => {
   const autoSaveEntry = async (entryId, responseData) => {
     try {
       setAutoSaving(true);
-      await sheetService.updateEntry(entryId, responseData);
+      // Add cache-busting timestamp to prevent caching issues
+      const entryDataWithTimestamp = {
+        ...responseData,
+        _timestamp: Date.now()
+      };
+      await sheetService.updateEntry(entryId, entryDataWithTimestamp);
       setLastSaved(new Date());
       console.log(`Auto-saved entry ${entryId}`);
+      
+      // Force reload of sheet data to ensure frontend shows latest updates
+      setTimeout(() => {
+        loadSheetData();
+      }, 1000);
     } catch (error) {
       console.error(`Failed to auto-save entry ${entryId}:`, error);
       // Don't show error for auto-saves to avoid overwhelming the user
@@ -151,9 +161,16 @@ const TeamSheetEditor = () => {
       
       if (field === 'compensatory_controls_provided' && value !== 'Y') {
         newResponses[entryId].compensatory_controls_details = '';
+        newResponses[entryId].estimated_time = '';
       }
       
       if (field === 'current_status' && !['In Progress', 'Completed', 'Blocked'].includes(value)) {
+        newResponses[entryId].implementation_date = '';
+      }
+
+      // Clear patching-related fields when patching is set to "No" or "N/A"
+      if (field === 'patching' && (value === 'N' || value === 'N/A' || value === 'No')) {
+        newResponses[entryId].patching_est_release_date = '';
         newResponses[entryId].implementation_date = '';
       }
 
@@ -248,9 +265,12 @@ const TeamSheetEditor = () => {
 
   const handleSaveDraft = async () => {
     try {
-      // Update each entry individually
+      // Update each entry individually with cache-busting
       for (const entryId in responses) {
-        const responseData = responses[entryId];
+        const responseData = {
+          ...responses[entryId],
+          _timestamp: Date.now() // Add cache-busting timestamp
+        };
         console.log(`Saving draft for entry ${entryId}:`, responseData);
         
         // Log specific date fields
@@ -380,10 +400,11 @@ const TeamSheetEditor = () => {
             <strong>Form Guidelines:</strong>
             <ul className="mb-0 mt-2">
               <li>When <strong>"Deployed in KE?"</strong> is set to <strong>"No"</strong>, all other fields will automatically be marked as "N/A"</li>
-              <li><strong>Risk Level</strong> and <strong>CVE</strong> are read-only and determined by the source data</li>
-              <li><strong>Location/Site</strong> field is only available when deployed in KE</li>
+              <li>When <strong>"Deployed in KE?"</strong> is set to <strong>"Yes"</strong>, the site field will appear for location entry</li>
               <li><strong>Vendor Contact Date</strong> appears only when "Vendor Contacted" is "Yes"</li>
+              <li><strong>Patching</strong> has two date fields (Est. Release Date and Implementation Date) that appear when "Yes" is selected</li>
               <li><strong>Estimated Time</strong> appears only when "Compensatory Controls Provided" is "Yes"</li>
+              <li><strong>Risk Level</strong> and <strong>CVE</strong> are read-only and determined by the source data</li>
               <li>Date fields will only appear when their prerequisite conditions are met</li>
               <li>Use <strong>"Save Draft"</strong> to save your progress without submitting</li>
             </ul>
@@ -506,40 +527,58 @@ const TeamSheetEditor = () => {
                         
                         {/* Patching (Est. Release Date & Implementation Date) */}
                         <td>
-                          <div className="d-flex gap-1">
-                            <div className="flex-fill">
-                              {responses[entry.id]?.deployed_in_ke === 'N' ? (
-                                <span className="text-muted small">N/A</span>
-                              ) : (responses[entry.id]?.vendor_contacted === 'Y' || responses[entry.id]?.current_status === 'In Progress') ? (
-                                <input
-                                  type="date"
-                                  className="form-control form-control-sm"
-                                  value={responses[entry.id]?.patching_est_release_date || ''}
-                                  onChange={(e) => handleResponseChange(entry.id, 'patching_est_release_date', e.target.value)}
-                                  disabled={sheet.assignment_status === 'completed'}
-                                  style={{fontSize: '0.75rem'}}
-                                />
-                              ) : (
-                                <span className="text-muted small">Date</span>
+                          {responses[entry.id]?.deployed_in_ke === 'N' ? (
+                            <span className="text-muted">N/A</span>
+                          ) : (
+                            <>
+                              <select
+                                className="form-select form-select-sm mb-1"
+                                style={{fontSize: '0.85rem'}}
+                                value={responses[entry.id]?.patching || ''}
+                                onChange={(e) => handleResponseChange(entry.id, 'patching', e.target.value)}
+                                disabled={sheet.assignment_status === 'completed'}
+                              >
+                                <option value="">Select</option>
+                                <option value="Y">Yes</option>
+                                <option value="N">No</option>
+                                <option value="N/A">N/A</option>
+                              </select>
+                              
+                              {/* Two date columns for patching when Yes is selected */}
+                              {responses[entry.id]?.patching === 'Y' && (
+                                <div className="d-flex gap-1">
+                                  <div className="flex-fill">
+                                    <input
+                                      type="date"
+                                      className="form-control form-control-sm"
+                                      value={responses[entry.id]?.patching_est_release_date || ''}
+                                      onChange={(e) => handleResponseChange(entry.id, 'patching_est_release_date', e.target.value)}
+                                      disabled={sheet.assignment_status === 'completed'}
+                                      style={{fontSize: '0.75rem'}}
+                                      title="Est. Release Date"
+                                    />
+                                    <small className="text-muted d-block text-center" style={{fontSize: '0.65rem'}}>
+                                      Est. Release
+                                    </small>
+                                  </div>
+                                  <div className="flex-fill">
+                                    <input
+                                      type="date"
+                                      className="form-control form-control-sm"
+                                      value={responses[entry.id]?.implementation_date || ''}
+                                      onChange={(e) => handleResponseChange(entry.id, 'implementation_date', e.target.value)}
+                                      disabled={sheet.assignment_status === 'completed'}
+                                      style={{fontSize: '0.75rem'}}
+                                      title="Implementation Date"
+                                    />
+                                    <small className="text-muted d-block text-center" style={{fontSize: '0.65rem'}}>
+                                      Implementation
+                                    </small>
+                                  </div>
+                                </div>
                               )}
-                            </div>
-                            <div className="flex-fill">
-                              {responses[entry.id]?.deployed_in_ke === 'N' ? (
-                                <span className="text-muted small">N/A</span>
-                              ) : ['In Progress', 'Completed', 'Blocked'].includes(responses[entry.id]?.current_status) ? (
-                                <input
-                                  type="date"
-                                  className="form-control form-control-sm"
-                                  value={responses[entry.id]?.implementation_date || ''}
-                                  onChange={(e) => handleResponseChange(entry.id, 'implementation_date', e.target.value)}
-                                  disabled={sheet.assignment_status === 'completed'}
-                                  style={{fontSize: '0.75rem'}}
-                                />
-                              ) : (
-                                <span className="text-muted small">Date</span>
-                              )}
-                            </div>
-                          </div>
+                            </>
+                          )}
                         </td>
                         
                         {/* Vendor Contacted */}

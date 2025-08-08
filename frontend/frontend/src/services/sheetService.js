@@ -156,6 +156,69 @@ const sheetService = {
     }
   },
 
+  // Generation team: Claim an entry for a specific user (creates user copy)
+  claimEntryForUser: async (originalEntryId, userId) => {
+    try {
+      const response = await apiClient.post(`/generation/entries/${originalEntryId}/claim`, {
+        user_id: userId
+      });
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to claim entry' };
+    }
+  },
+
+  // Generation team: Release an entry (removes user assignment)
+  releaseEntry: async (entryId) => {
+    try {
+      const response = await apiClient.post(`/generation/entries/${entryId}/release`);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to release entry' };
+    }
+  },
+
+  // Generation team: Update progress on an entry
+  updateEntryProgress: async (entryId, progressData) => {
+    try {
+      const response = await apiClient.put(`/generation/entries/${entryId}/progress`, progressData);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to update progress' };
+    }
+  },
+
+  // Generation team: Mark entry as patched and close it
+  markEntryAsPatched: async (entryId, patchData = {}) => {
+    try {
+      const response = await apiClient.post(`/generation/entries/${entryId}/mark-patched`, patchData);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to mark entry as patched' };
+    }
+  },
+
+  // Generation team: Get all instances of a vulnerability across sites
+  getVulnerabilityGroup: async (vulnerabilityId) => {
+    try {
+      const response = await apiClient.get(`/generation/vulnerabilities/${vulnerabilityId}/group`);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to fetch vulnerability group' };
+    }
+  },
+
+  // Generation team: Get entries by view mode
+  getGenerationEntries: async (viewMode, filters = {}) => {
+    try {
+      const params = new URLSearchParams({ view_mode: viewMode, ...filters });
+      const response = await apiClient.get(`/generation/entries?${params}`);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to fetch generation entries' };
+    }
+  },
+
   // Get entries for a specific sheet (for team members)
   getSheetEntries: async (sheetId) => {
     try {

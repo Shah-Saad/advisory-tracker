@@ -97,17 +97,40 @@ class SheetResponseService {
 
         // Send notification to admin about the update
         await NotificationService.createNotification({
-          user_id: null, // System notification
-          type: 'team_sheet_updated',
-          title: 'Team Sheet Entry Updated',
-          message: `${updated_by_name} from ${team_name} updated an entry in sheet "${sheet_name}"`,
+          user_id: userId,
+          type: 'team_entry_updated',
+          title: 'Team Entry Updated',
+          message: `${updated_by_name} from ${team_name} team updated an entry in "${sheet_name}"`,
           data: {
             sheet_id,
             team_id,
             response_id: responseId,
-            updated_by: userId
+            updated_by: userId,
+            sheet_name,
+            team_name,
+            action: 'entry_updated'
           }
         });
+
+        // If entry is marked as completed/patched, send special notification
+        if (updateData.status && ['completed', 'patched', 'closed'].includes(updateData.status.toLowerCase())) {
+          await NotificationService.createNotification({
+            user_id: userId,
+            type: 'entry_completed',
+            title: 'Entry Marked as Completed',
+            message: `${updated_by_name} from ${team_name} team completed patching for an entry in "${sheet_name}"`,
+            data: {
+              sheet_id,
+              team_id,
+              response_id: responseId,
+              updated_by: userId,
+              sheet_name,
+              team_name,
+              action: 'entry_completed',
+              completion_status: updateData.status
+            }
+          });
+        }
       }
 
       return updatedResponse;

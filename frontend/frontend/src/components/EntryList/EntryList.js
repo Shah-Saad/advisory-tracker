@@ -297,7 +297,7 @@ const EntryList = () => {
 
   // Check if user can edit specific fields
   const canEditEntry = () => {
-    return currentUser && (currentUser.role === 'admin' || currentUser.role === 'manager' || currentUser.role === 'user');
+    return currentUser && (currentUser.role === 'admin' || currentUser.role === 'team_lead' || currentUser.role === 'team_member');
   };
 
   const getRiskBadgeClass = (riskLevel) => {

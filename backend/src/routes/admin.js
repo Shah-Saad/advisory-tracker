@@ -5,6 +5,7 @@ const { requireAuth, requireRole } = require('../middlewares/auth');
 const UserManagementService = require('../services/UserManagementService');
 const SheetEntryService = require('../services/SheetEntryService');
 const TeamService = require('../services/TeamService');
+const CISAService = require('../services/CISAService');
 
 // Middleware to ensure only admins can access these routes
 router.use(requireAuth);
@@ -305,6 +306,94 @@ router.patch('/users/:id/team', async (req, res) => {
   } catch (error) {
     console.error('Error updating user team:', error);
     res.status(500).json({ error: 'Failed to update user team assignment' });
+  }
+});
+
+// Generate CISA Advisory Excel Report
+router.post('/generate-cisa-report', async (req, res) => {
+  try {
+    const { month, year } = req.body;
+    
+    // Validate inputs
+    if (!month || !year) {
+      return res.status(400).json({ 
+        error: 'Month and year are required' 
+      });
+    }
+    
+    if (month < 1 || month > 12) {
+      return res.status(400).json({ 
+        error: 'Month must be between 1 and 12' 
+      });
+    }
+    
+    if (year < 2020 || year > new Date().getFullYear() + 1) {
+      return res.status(400).json({ 
+        error: 'Please provide a valid year' 
+      });
+    }
+    
+    console.log(`🔄 Admin ${req.user.email} requested CISA report for ${month}/${year}`);
+    
+    // Generate the report
+    const report = await CISAService.generateMonthlyReport(month, year);
+    
+    // Set headers for file download
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${report.filename}"`);
+    res.setHeader('Content-Length', report.buffer.length);
+    
+    console.log(`✅ CISA report generated: ${report.filename} (${report.count} advisories)`);
+    
+    // Send the Excel file
+    res.send(report.buffer);
+    
+  } catch (error) {
+    console.error('Error generating CISA report:', error);
+    res.status(500).json({ 
+      error: 'Failed to generate CISA report',
+      message: error.message 
+    });
+  }
+});
+
+// Get CISA Advisory Preview (without generating file)
+router.post('/preview-cisa-advisories', async (req, res) => {
+  try {
+    const { month, year } = req.body;
+    
+    // Validate inputs
+    if (!month || !year) {
+      return res.status(400).json({ 
+        error: 'Month and year are required' 
+      });
+    }
+    
+    if (month < 1 || month > 12) {
+      return res.status(400).json({ 
+        error: 'Month must be between 1 and 12' 
+      });
+    }
+    
+    console.log(`👀 Admin ${req.user.email} requested CISA advisory preview for ${month}/${year}`);
+    
+    // Just scrape the advisories without generating Excel
+    const advisories = await CISAService.scrapeAdvisories(month, year);
+    
+    res.json({
+      month: CISAService.getMonthName(month),
+      year,
+      count: advisories.length,
+      advisories: advisories.slice(0, 10), // Return first 10 for preview
+      totalFound: advisories.length
+    });
+    
+  } catch (error) {
+    console.error('Error previewing CISA advisories:', error);
+    res.status(500).json({ 
+      error: 'Failed to preview CISA advisories',
+      message: error.message 
+    });
   }
 });
 

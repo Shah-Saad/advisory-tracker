@@ -6,6 +6,7 @@ const SheetService = require('../services/SheetService');
 const FileProcessingService = require('../services/FileProcessingService');
 const { auth } = require('../middlewares/auth');
 const { uploadMiddleware } = require('../middlewares/uploadMiddleware');
+const { broadcastToAdmins } = require('./sse'); // Import SSE broadcasting
 
 /**
  * @route POST /api/sheet-entries/upload
@@ -151,8 +152,7 @@ router.get('/stats', auth, async (req, res) => {
  * @queryParams {string} team - Filter by team
  * @queryParams {string} location - Filter by location
  * @queryParams {string} product_name - Filter by product name
- * @queryParams {string} vendor_name - Filter by vendor name
- * @queryParams {string} product_category - Filter by product category
+ * @queryParams {string} vendor - Filter by vendor/OEM name (uses oem_vendor field)
  * @queryParams {number} vendor_id - Filter by vendor ID
  * @queryParams {number} product_id - Filter by product ID
  */
@@ -185,9 +185,7 @@ router.get('/filter', auth, async (req, res) => {
             filters.vendor_name = req.query.vendor_name;
         }
 
-        if (req.query.product_category) {
-            filters.product_category = req.query.product_category;
-        }
+        
 
         if (req.query.vendor_id) {
             filters.vendor_id = req.query.vendor_id;
@@ -244,8 +242,47 @@ router.put('/:id', auth, async (req, res) => {
             return res.status(404).json({ message: 'Sheet entry not found' });
         }
         
+        const existingEntry = existingEntries[0];
+        
+        // Team isolation: Check if user has access to this entry
+        // Only admins or users from the correct team can update entries
+        if (req.user.role !== 'admin') {
+            // Get team assignment for this sheet
+            const teamAssignment = await require('../../config/db')('team_sheets')
+                .where('sheet_id', existingEntry.sheet_id)
+                .where('team_id', req.user.team_id)
+                .first();
+            
+            if (!teamAssignment) {
+                return res.status(403).json({ 
+                    message: 'Access denied. This entry is not assigned to your team.' 
+                });
+            }
+        }
+        
         // Update the entry with user information for notifications
         const updatedEntry = await SheetEntryService.updateEntry(id, updateData, req.user);
+        
+        // Broadcast real-time update to all connected admin clients
+        try {
+            broadcastToAdmins({
+                type: 'entry_updated',
+                entryId: id,
+                entry: updatedEntry,
+                updatedBy: {
+                    id: req.user.id,
+                    name: req.user.name,
+                    email: req.user.email,
+                    team: req.user.team?.name
+                },
+                timestamp: new Date().toISOString()
+            });
+            console.log(`📡 Broadcasted entry update for entry ${id} by user ${req.user.email}`);
+        } catch (sseError) {
+            console.warn('Failed to broadcast SSE update:', sseError);
+            // Don't fail the request if SSE fails
+        }
+        
         res.json({
             message: 'Entry updated successfully',
             entry: updatedEntry

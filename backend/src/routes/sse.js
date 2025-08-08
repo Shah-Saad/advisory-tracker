@@ -8,7 +8,7 @@ const sseClients = new Map();
 /**
  * @route GET /api/sse/subscribe
  * @desc Subscribe to server-sent events for real-time updates
- * @access Private (Admin only)
+ * @access Private (All authenticated users)
  */
 router.get('/subscribe', (req, res) => {
   // Get token from query parameter since EventSource doesn't support custom headers
@@ -23,10 +23,8 @@ router.get('/subscribe', (req, res) => {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     const user = decoded;
 
-    // Only allow admin users to subscribe to SSE
-    if (user.role !== 'admin') {
-      return res.status(403).json({ message: 'Access denied. Admin role required.' });
-    }
+    // Allow all authenticated users to subscribe to SSE for real-time sync
+    console.log(`✅ SSE subscription for user: ${user.email} (${user.role})`);
 
     // Set up SSE headers
     res.writeHead(200, {
@@ -37,7 +35,7 @@ router.get('/subscribe', (req, res) => {
       'Access-Control-Allow-Headers': 'Cache-Control'
     });
 
-    const clientId = `admin_${user.id}_${Date.now()}`;
+    const clientId = `user_${user.id}_${Date.now()}`;
     
     // Check if this user already has a connection and close the old one
     const existingConnections = Array.from(sseClients.entries()).filter(([id, client]) => 
@@ -45,7 +43,7 @@ router.get('/subscribe', (req, res) => {
     );
     
     if (existingConnections.length > 0) {
-      console.log(`Closing ${existingConnections.length} existing connections for user ${user.id}`);
+      console.log(`🔄 Closing ${existingConnections.length} existing connections for user ${user.id}`);
       existingConnections.forEach(([existingId, existingClient]) => {
         try {
           existingClient.response.end();
@@ -61,15 +59,16 @@ router.get('/subscribe', (req, res) => {
       response: res,
       userId: user.id,
       userRole: user.role,
+      teamId: user.team_id,
       connectedAt: new Date()
     });
 
-    console.log(`SSE Client connected: ${clientId} (${sseClients.size} total clients)`);
+    console.log(`📡 SSE Client connected: ${clientId} (${sseClients.size} total clients)`);
 
     // Send initial connection confirmation
     res.write(`data: ${JSON.stringify({
       type: 'connected',
-      message: 'Successfully connected to live updates',
+      message: 'Successfully connected to real-time updates',
       clientId: clientId,
       timestamp: new Date().toISOString()
     })}\n\n`);
@@ -106,29 +105,43 @@ router.get('/subscribe', (req, res) => {
 });
 
 /**
- * Send update to all connected SSE clients
+ * Send update to all connected SSE clients (admins and relevant team members)
  * @param {Object} data - Data to send to clients
  * @param {string} eventType - Type of event (optional)
+ * @param {number} targetTeamId - Optional team ID to filter recipients
  */
-function broadcastToAdmins(data, eventType = 'update') {
+function broadcastToAdmins(data, eventType = 'update', targetTeamId = null) {
   const message = JSON.stringify({
     type: eventType,
     data: data,
     timestamp: new Date().toISOString()
   });
 
-  console.log(`Broadcasting SSE message to ${sseClients.size} clients:`, eventType);
+  console.log(`📡 Broadcasting SSE message to clients: ${eventType}${targetTeamId ? ` (team ${targetTeamId})` : ' (all)'}`);
 
-  // Send to all connected admin clients
+  let broadcastCount = 0;
+
+  // Send to all connected clients (admins see everything, team members see relevant updates)
   sseClients.forEach((client, clientId) => {
     try {
-      client.response.write(`data: ${message}\n\n`);
+      // Send to admins regardless of team
+      if (client.userRole === 'admin') {
+        client.response.write(`data: ${message}\n\n`);
+        broadcastCount++;
+      }
+      // Send to team members if no specific team filter or if it matches their team
+      else if (!targetTeamId || client.teamId === targetTeamId) {
+        client.response.write(`data: ${message}\n\n`);
+        broadcastCount++;
+      }
     } catch (error) {
-      console.error(`Error sending SSE message to client ${clientId}:`, error);
+      console.error(`❌ Error sending SSE message to client ${clientId}:`, error);
       // Remove broken connections
       sseClients.delete(clientId);
     }
   });
+
+  console.log(`📤 SSE message sent to ${broadcastCount}/${sseClients.size} clients`);
 }
 
 /**
@@ -141,6 +154,7 @@ function getSSEStats() {
       clientId,
       userId: client.userId,
       userRole: client.userRole,
+      teamId: client.teamId,
       connectedAt: client.connectedAt
     }))
   };
