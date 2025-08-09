@@ -170,19 +170,19 @@ const CISAReportGenerator = () => {
                 <i className="fas fa-list"></i>
                 Preview: {preview.month} {preview.year} CISA Advisories
               </h3>
-              <div className="cisa-preview-stats">
-                <span className="cisa-count">
-                  Found {preview.totalFound} advisories
-                </span>
-              </div>
+                <div className="cisa-preview-stats">
+                  <span className="cisa-count">Found {preview.totalFound} advisories</span>
+                  <span className="cisa-count" style={{ background: 'rgba(52, 152, 219, 0.8)' }}>
+                    Page {preview.page} / {preview.totalPages}
+                  </span>
+                </div>
             </div>
 
             {preview.totalFound > 0 ? (
               <div className="cisa-preview-content">
                 <div className="cisa-preview-note">
                   <i className="fas fa-info-circle"></i>
-                  Showing first {Math.min(10, preview.totalFound)} advisories. 
-                  Generate the full Excel report to see all {preview.totalFound} advisories.
+                  Showing up to 10 advisories in preview. Generate the full Excel report to get all {preview.totalFound} advisories.
                 </div>
 
                 <div className="cisa-advisories-list">
@@ -210,6 +210,8 @@ const CISAReportGenerator = () => {
                     </div>
                   ))}
                 </div>
+
+                {/* No client-side paging controls; scraper collects across pages and preview shows first 10 */}
               </div>
             ) : (
               <div className="cisa-no-results">

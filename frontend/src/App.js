@@ -34,10 +34,16 @@ function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showChangePassword, setShowChangePassword] = useState(false);
+  const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'light');
 
   useEffect(() => {
     checkAuthStatus();
   }, []);
+
+  useEffect(() => {
+    document.body.setAttribute('data-theme', theme);
+    localStorage.setItem('theme', theme);
+  }, [theme]);
 
   const checkAuthStatus = async () => {
     try {
@@ -78,11 +84,11 @@ function App() {
         {user ? (
           <>
             {/* Navigation */}
-            <nav className="navbar navbar-expand-lg navbar-dark bg-primary">
+            <nav className={`navbar navbar-expand-lg`} style={{ background: 'var(--surface)', borderBottom: '1px solid var(--border)' }}>
               <div className="container-fluid">
                 <span className="navbar-brand mb-0 h1">
-                  <i className="fas fa-shield-alt me-2"></i>
-                  Advisory Tracker
+                  <i className="fas fa-shield-alt me-2" style={{ color: 'var(--primary)' }}></i>
+                  <span style={{ color: 'var(--text)' }}>Advisory Tracker</span>
                 </span>
                 
                 {/* Navigation Links */}
@@ -126,6 +132,18 @@ function App() {
                 </div>
                 
                 <div className="navbar-nav ms-auto">
+                  <div className="nav-item me-3 d-flex align-items-center">
+                    <div className="btn-group" role="group" aria-label="Theme selector">
+                      <button className="btn btn-sm" style={{ color: 'var(--text)', border: '1px solid var(--border)', background: 'var(--surface)' }} onClick={() => setTheme('light')}>
+                        <i className="fas fa-sun me-1" style={{ color: 'var(--warning)' }}></i>
+                        Light
+                      </button>
+                      <button className="btn btn-sm" style={{ color: 'var(--text)', border: '1px solid var(--border)', background: 'var(--surface)' }} onClick={() => setTheme('dark')}>
+                        <i className="fas fa-moon me-1" style={{ color: 'var(--brand-blue)' }}></i>
+                        Dark
+                      </button>
+                    </div>
+                  </div>
                   {/* Notification Panel for Admin Users */}
                   {user && user.role === 'admin' && (
                     <div className="nav-item me-3 d-flex align-items-center">

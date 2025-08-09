@@ -7,7 +7,87 @@ const fs = require('fs').promises;
 class CISAService {
   constructor() {
     this.baseUrl = 'https://www.cisa.gov/news-events/cybersecurity-advisories';
+    // Default to ICS Advisory filter
     this.advisoryTypeFilter = '?f%5B0%5D=advisory_type%3A95';
+  }
+
+  async fetchAdvisoryDetails(url) {
+    if (!url) return {};
+    const response = await axios.get(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      },
+      timeout: 30000
+    });
+    const $ = cheerio.load(response.data);
+
+    // Vendor from Vendor section or list item
+    let vendor = '';
+    $('h2').each((_, h) => {
+      const txt = $(h).text().trim().toLowerCase();
+      if (!vendor && txt === 'vendor') {
+        const li = $(h).nextAll('.l-page-section__content').first().find('li').first();
+        if (li && li.length) vendor = li.text().trim();
+      }
+    });
+    if (!vendor) {
+      $('li').each((_, li) => {
+        const text = $(li).text().trim();
+        const m = text.match(/^Vendor\s*:\s*(.+)$/i);
+        if (!vendor && m) vendor = m[1].trim();
+      });
+    }
+
+    // Product from Equipment
+    let productName = '';
+    $('li').each((_, li) => {
+      const html = $(li).html() || '';
+      if (!productName && /<strong>\s*Equipment\s*<\/strong>\s*:/i.test(html)) {
+        const m = $(li).text().trim().match(/^Equipment\s*:\s*(.+)$/i);
+        if (m) productName = m[1].trim();
+      }
+    });
+
+    // CVEs anywhere on the page
+    const cves = new Set();
+    $('a').each((_, a) => {
+      const t = $(a).text().trim();
+      const matches = t.match(/CVE-\d{4}-\d{4,7}/gi);
+      if (matches) matches.forEach(v => cves.add(v.toUpperCase()));
+    });
+    $('p, li').each((_, el) => {
+      const t = $(el).text();
+      const matches = t.match(/CVE-\d{4}-\d{4,7}/gi);
+      if (matches) matches.forEach(v => cves.add(v.toUpperCase()));
+    });
+
+    // CVSS score detection and risk
+    let maxScore = null;
+    const scoreRegexes = [
+      /CVSS\s*v?\d(?:\.\d)?\s*(?:base\s*score\s*of\s*)?(\d+(?:\.\d)?)/i,
+      /Base\s*Score\s*:?\s*(\d+(?:\.\d)?)/i
+    ];
+    $('p, li').each((_, el) => {
+      const t = $(el).text();
+      for (const rx of scoreRegexes) {
+        const m = t.match(rx);
+        if (m) {
+          const val = parseFloat(m[1]);
+          if (!isNaN(val)) maxScore = Math.max(maxScore ?? 0, val);
+        }
+      }
+    });
+
+    const riskLevel = this.calculateRiskLevel(maxScore);
+    return { vendor, productName, cves: Array.from(cves), cvss: maxScore, riskLevel };
+  }
+
+  calculateRiskLevel(score) {
+    if (score == null || isNaN(score)) return '';
+    if (score >= 9.0) return 'Critical';
+    if (score >= 7.0) return 'High';
+    if (score >= 4.0) return 'Medium';
+    return 'Low';
   }
 
   /**
@@ -16,54 +96,106 @@ class CISAService {
    * @param {number} year - Year (e.g., 2025)
    * @returns {Array} Array of advisory objects
    */
-  async scrapeAdvisories(month, year) {
+  async scrapeAdvisories(month, year, options = { useFilter: true }) {
     try {
       console.log(`🔍 Scraping CISA advisories for ${month}/${year}...`);
       
       const advisories = [];
       let page = 0;
       let hasMorePages = true;
+      const useFilter = options && options.useFilter !== false;
       
+      // Define target month window for early-stop logic
+      const targetStart = new Date(Date.UTC(year, month - 1, 1));
+      const targetEnd = new Date(Date.UTC(month === 12 ? year + 1 : year, month === 12 ? 0 : month, 1));
+
       while (hasMorePages) {
-        const url = `${this.baseUrl}${this.advisoryTypeFilter}&page=${page}`;
+        const url = useFilter
+          ? `${this.baseUrl}${this.advisoryTypeFilter}&page=${page}`
+          : `${this.baseUrl}?page=${page}`;
         console.log(`📄 Fetching page ${page + 1}: ${url}`);
-        
+
         const response = await axios.get(url, {
           headers: {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
           },
           timeout: 30000
         });
-        
+
         const $ = cheerio.load(response.data);
         const pageAdvisories = [];
-        
+
+        const teasersOnPage = $('.c-teaser').length;
+        if (teasersOnPage === 0) {
+          // No more items available on the site for this listing
+          console.log('ℹ️ No teasers found on page; stopping pagination');
+          break;
+        }
+
         // Find all advisory articles
+        const pageDates = [];
         $('.c-teaser').each((index, element) => {
           try {
             const $teaser = $(element);
             
             // Extract date
-            const dateText = $teaser.find('.c-teaser__date time').attr('datetime') || 
-                           $teaser.find('.c-teaser__date time').text().trim();
-            
-            if (!dateText) return;
-            
-            const advisoryDate = new Date(dateText);
-            const advisoryMonth = advisoryDate.getMonth() + 1; // JavaScript months are 0-indexed
-            const advisoryYear = advisoryDate.getFullYear();
+            const timeEl = $teaser.find('.c-teaser__date time');
+            const datetimeAttr = timeEl.attr('datetime');
+            const textDate = timeEl.text().trim();
+
+            if (!datetimeAttr && !textDate) return;
+
+            let advisoryDate = null;
+            let advisoryMonth = null;
+            let advisoryYear = null;
+
+            if (datetimeAttr) {
+              const d = new Date(datetimeAttr);
+              if (!isNaN(d.getTime())) {
+                advisoryDate = d;
+                advisoryMonth = d.getUTCMonth() + 1;
+                advisoryYear = d.getUTCFullYear();
+              }
+            }
+
+            // Fallback to parsing visible text like "Jul 01, 2025"
+            if ((!advisoryDate || advisoryMonth === null || advisoryYear === null) && textDate) {
+              const match = textDate.match(/^(\w{3})\s+(\d{1,2}),\s*(\d{4})$/);
+              const monthMap = { Jan:1, Feb:2, Mar:3, Apr:4, May:5, Jun:6, Jul:7, Aug:8, Sep:9, Oct:10, Nov:11, Dec:12 };
+              if (match) {
+                const mon = monthMap[match[1]];
+                const day = parseInt(match[2], 10);
+                const yr = parseInt(match[3], 10);
+                if (mon && day && yr) {
+                  advisoryMonth = mon;
+                  advisoryYear = yr;
+                  // Construct UTC date to avoid TZ shifts
+                  advisoryDate = new Date(Date.UTC(yr, mon - 1, day));
+                }
+              } else {
+                // Last resort: let Date parse, but use UTC parts
+                const d = new Date(textDate);
+                if (!isNaN(d.getTime())) {
+                  advisoryDate = d;
+                  advisoryMonth = d.getUTCMonth() + 1;
+                  advisoryYear = d.getUTCFullYear();
+                }
+              }
+            }
+
+            if (!advisoryDate) return;
+
+            pageDates.push(advisoryDate);
             
             // Only include advisories from the specified month and year
             if (advisoryMonth !== month || advisoryYear !== year) {
               return;
             }
             
-            // Extract advisory ID
+            // Extract advisory ID (robust across markup changes)
             const metaText = $teaser.find('.c-teaser__meta').text().trim();
-            const advisoryId = metaText.includes('|') ? 
-              metaText.split('|')[1].trim() : 
-              metaText;
-            
+            let advisoryId = metaText.includes('|') ? metaText.split('|')[1].trim() : metaText;
+
             // Extract title and link
             const titleElement = $teaser.find('.c-teaser__title a');
             const title = titleElement.find('span').text().trim() || titleElement.text().trim();
@@ -74,6 +206,20 @@ class CISAService {
             const advisoryType = metaText.includes('|') ? 
               metaText.split('|')[0].trim() : 
               'ICS Advisory';
+
+            // Fallbacks for missing advisoryId
+            if (!advisoryId || advisoryId.length < 3) {
+              if (relativeLink) {
+                const lastSegment = relativeLink.split('/').filter(Boolean).pop() || '';
+                const cleaned = lastSegment.replace(/\.(html?)$/i, '').toUpperCase();
+                if (cleaned) advisoryId = cleaned;
+              }
+            }
+            if (!advisoryId || advisoryId.length < 3) {
+              // Try extracting known patterns from title, e.g., ICSA-25-XYZ, AA23-xxx
+              const idMatch = title && title.match(/\b(?:ICSA|AA|CSA)[-\s]?\d{2}[-\w]+/i);
+              if (idMatch) advisoryId = idMatch[0].toUpperCase();
+            }
             
             if (title && advisoryId) {
               const advisory = {
@@ -95,25 +241,47 @@ class CISAService {
         });
         
         advisories.push(...pageAdvisories);
-        
-        // Check if we found any advisories on this page for the target month
-        // If no advisories from target month found and we've checked several pages, stop
-        if (pageAdvisories.length === 0) {
-          hasMorePages = false;
-        } else {
-          page++;
-          // Add delay to be respectful to the server
-          await new Promise(resolve => setTimeout(resolve, 1000));
+
+        // Determine if we can stop based on page date range relative to target month
+        if (pageDates.length > 0) {
+          const maxDate = new Date(Math.max(...pageDates.map(d => d.getTime())));
+          const minDate = new Date(Math.min(...pageDates.map(d => d.getTime())));
+          // If the newest item on this page is older than the target start, we've passed the month
+          if (maxDate < targetStart) {
+            console.log('🛑 Newest item on page is before target month; stopping pagination');
+            break;
+          }
+          // If the oldest item is still newer than or equal to targetEnd, we haven't reached the month yet; continue
         }
-        
+
+        page++;
+        // Add delay to be respectful to the server
+        await new Promise(resolve => setTimeout(resolve, 700));
+
         // Safety limit to prevent infinite loops
-        if (page > 20) {
+        if (page > 400) {
           console.log('⚠️ Reached page limit, stopping...');
           hasMorePages = false;
         }
       }
       
-      console.log(`📊 Found ${advisories.length} advisories for ${month}/${year}`);
+      console.log(`📊 Found ${advisories.length} advisories for ${month}/${year}${useFilter ? ' (filtered ICS)' : ''}`);
+
+      // Enrich each advisory with details from its page (vendor, product/equipment, CVEs, CVSS/risk)
+      for (let i = 0; i < advisories.length; i++) {
+        try {
+          const details = await this.fetchAdvisoryDetails(advisories[i].link);
+          advisories[i] = { ...advisories[i], ...details };
+        } catch (e) {
+          console.warn(`⚠️ Failed to enrich advisory ${advisories[i].advisoryId}: ${e.message}`);
+        }
+        await new Promise(r => setTimeout(r, 250));
+      }
+
+      if (advisories.length === 0 && useFilter) {
+        console.log('↩️ No results with ICS filter; retrying unfiltered to ensure coverage...');
+        return await this.scrapeAdvisories(month, year, { useFilter: false });
+      }
       return advisories.sort((a, b) => new Date(b.date) - new Date(a.date)); // Sort by date descending
       
     } catch (error) {
@@ -132,54 +300,134 @@ class CISAService {
   async generateExcelFile(advisories, month, year) {
     try {
       console.log(`📝 Generating Excel file for ${advisories.length} advisories...`);
-      
-      // Prepare data for Excel
-      const excelData = advisories.map((advisory, index) => ({
-        'S.No': index + 1,
-        'Date': advisory.date,
-        'Advisory ID': advisory.advisoryId,
-        'Title': advisory.title,
-        'Type': advisory.type,
-        'Link': advisory.link,
-        'Vendor/OEM': '', // Empty for manual entry
-        'Product': '', // Empty for manual entry
-        'Risk Level': '', // Empty for manual entry
-        'Status': 'Pending', // Default status
-        'Comments': '' // Empty for manual entry
-      }));
-      
-      // Create workbook and worksheet
+
+      // Create workbook
       const workbook = XLSX.utils.book_new();
-      const worksheet = XLSX.utils.json_to_sheet(excelData);
-      
-      // Set column widths
-      const columnWidths = [
-        { wch: 6 },   // S.No
-        { wch: 12 },  // Date
-        { wch: 18 },  // Advisory ID
-        { wch: 50 },  // Title
-        { wch: 15 },  // Type
-        { wch: 40 },  // Link
-        { wch: 20 },  // Vendor/OEM
-        { wch: 25 },  // Product
-        { wch: 12 },  // Risk Level
-        { wch: 12 },  // Status
-        { wch: 30 }   // Comments
+
+      // Define header rows matching client's template
+      const headerTop = [
+        'OEM/Vendor',
+        'Source',
+        'Product Name',
+        'Risk Level',
+        'CVE',
+        'Product Deployed in KE?', // spans next two columns
+        '',
+        'Vendor Contacted', // spans next two columns
+        '',
+        'Patching', // spans next two columns
+        '',
+        'Compensatory Controls Provided', // spans next two columns
+        '',
+        'Comments',
+        'Status'
       ];
-      worksheet['!cols'] = columnWidths;
-      
-      // Add worksheet to workbook
+
+      const headerBottom = [
+        'OEM/Vendor',
+        'Source',
+        'Product Name',
+        'Risk Level',
+        'CVE',
+        'Y/N',
+        'Site',
+        'Y/N',
+        'Date',
+        'Est. Release Date',
+        'Implementation Time',
+        'Y/N',
+        'Est. Time',
+        'Comments',
+        'Status'
+      ];
+
+      // Build data rows in the exact order
+      const dataRows = advisories.map(a => ([
+        a.vendor || '',
+        'CISA',
+        a.productName || '',
+        a.riskLevel || '',
+        (a.cves && a.cves.length) ? a.cves.join('\n') : '',
+        'N',
+        '',
+        'N',
+        '',
+        '',
+        '',
+        'N',
+        '',
+        'Product not deployed',
+        'N/A'
+      ]));
+
+      // Assemble sheet using arrays-of-arrays for precise layout
+      const aoa = [headerTop, headerBottom, ...dataRows];
+      const worksheet = XLSX.utils.aoa_to_sheet(aoa);
+
+      // Define merges to create grouped headers
+      worksheet['!merges'] = [
+        // Freeze first row labels across two rows where needed
+        { s: { r: 0, c: 0 }, e: { r: 1, c: 0 } }, // OEM/Vendor
+        { s: { r: 0, c: 1 }, e: { r: 1, c: 1 } }, // Source
+        { s: { r: 0, c: 2 }, e: { r: 1, c: 2 } }, // Product Name
+        { s: { r: 0, c: 3 }, e: { r: 1, c: 3 } }, // Risk Level
+        { s: { r: 0, c: 4 }, e: { r: 1, c: 4 } }, // CVE
+        { s: { r: 0, c: 5 }, e: { r: 0, c: 6 } }, // Product Deployed in KE? (Y/N, Site)
+        { s: { r: 0, c: 7 }, e: { r: 0, c: 8 } }, // Vendor Contacted (Y/N, Date)
+        { s: { r: 0, c: 9 }, e: { r: 0, c: 10 } }, // Patching (Est. Release Date, Implementation Time)
+        { s: { r: 0, c: 11 }, e: { r: 0, c: 12 } }, // Compensatory Controls Provided (Y/N, Est. Time)
+        { s: { r: 0, c: 13 }, e: { r: 1, c: 13 } }, // Comments
+        { s: { r: 0, c: 14 }, e: { r: 1, c: 14 } }, // Status
+      ];
+
+      // Column widths tuned for template
+      worksheet['!cols'] = [
+        { wch: 18 }, // OEM/Vendor
+        { wch: 10 }, // Source
+        { wch: 28 }, // Product Name
+        { wch: 10 }, // Risk Level
+        { wch: 20 }, // CVE
+        { wch: 6 },  // Deployed Y/N
+        { wch: 10 }, // Site
+        { wch: 6 },  // Vendor Contacted Y/N
+        { wch: 12 }, // Vendor Contacted Date
+        { wch: 16 }, // Est. Release Date
+        { wch: 18 }, // Implementation Time
+        { wch: 6 },  // Controls Y/N
+        { wch: 12 }, // Controls Est. Time
+        { wch: 30 }, // Comments
+        { wch: 10 }, // Status
+      ];
+
+      // Add hyperlinks for Source cells to point to the advisory link
+      for (let i = 0; i < advisories.length; i++) {
+        const rowIndex = 2 + i; // data starts at third row (0-based indexing)
+        const cellAddr = XLSX.utils.encode_cell({ r: rowIndex, c: 1 }); // column B (Source)
+        const existing = worksheet[cellAddr] || { t: 's', v: 'CISA' };
+        existing.l = { Target: advisories[i].link || '', Tooltip: advisories[i].title || 'View advisory' };
+        existing.v = 'CISA';
+        worksheet[cellAddr] = existing;
+
+        // Optionally place CVE if present in title (best-effort extraction)
+        const cveMatch = advisories[i].title && advisories[i].title.match(/CVE-\d{4}-\d{4,7}/gi);
+        if (cveMatch && cveMatch.length > 0) {
+          const cveCell = XLSX.utils.encode_cell({ r: rowIndex, c: 4 });
+          worksheet[cveCell] = { t: 's', v: cveMatch.join('\n') };
+        }
+      }
+
+      // Sheet name
       const monthNames = [
         'January', 'February', 'March', 'April', 'May', 'June',
         'July', 'August', 'September', 'October', 'November', 'December'
       ];
       const sheetName = `${monthNames[month - 1]} ${year} CISA Advisories`;
       XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
-      
+
       // Generate buffer
       const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
-      
-      console.log('✅ Excel file generated successfully');
+
+      console.log('✅ Excel file generated in template format successfully');
       return buffer;
       
     } catch (error) {

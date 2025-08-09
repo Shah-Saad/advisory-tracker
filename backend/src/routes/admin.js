@@ -360,7 +360,9 @@ router.post('/generate-cisa-report', async (req, res) => {
 // Get CISA Advisory Preview (without generating file)
 router.post('/preview-cisa-advisories', async (req, res) => {
   try {
-    const { month, year } = req.body;
+    const { month, year, page: rawPage, pageSize: rawPageSize } = req.body;
+    const page = Math.max(parseInt(rawPage || 1, 10), 1);
+    const pageSize = Math.min(Math.max(parseInt(rawPageSize || 10, 10), 1), 100);
     
     // Validate inputs
     if (!month || !year) {
@@ -379,13 +381,22 @@ router.post('/preview-cisa-advisories', async (req, res) => {
     
     // Just scrape the advisories without generating Excel
     const advisories = await CISAService.scrapeAdvisories(month, year);
-    
+
+    const totalFound = advisories.length;
+    const totalPages = Math.max(Math.ceil(totalFound / pageSize), 1);
+    const startIndex = (page - 1) * pageSize;
+    const endIndex = startIndex + pageSize;
+    const pageItems = advisories.slice(startIndex, endIndex);
+
     res.json({
       month: CISAService.getMonthName(month),
       year,
-      count: advisories.length,
-      advisories: advisories.slice(0, 10), // Return first 10 for preview
-      totalFound: advisories.length
+      count: pageItems.length,
+      totalFound,
+      page,
+      pageSize,
+      totalPages,
+      advisories: pageItems
     });
     
   } catch (error) {

@@ -1,5 +1,8 @@
 .App {
   text-align: center;
+  background-color: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
 }
 
 .App-header {
@@ -8,17 +11,31 @@
   color: white;
 }
 
-.navbar-custom {
-  background-color: #0d6efd;
+/* General theming helpers */
+.navbar,
+.dropdown-menu,
+.card,
+.modal-content,
+.list-group-item,
+.table,
+.offcanvas,
+.toast {
+  background-color: var(--surface) !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
 }
 
-.navbar-custom .navbar-brand,
-.navbar-custom .nav-link {
-  color: white !important;
+.nav-link,
+a {
+  color: var(--text);
+}
+.nav-link:hover,
+a:hover {
+  color: var(--accent);
 }
 
-.navbar-custom .nav-link:hover {
-  color: #cce7ff !important;
+.text-muted {
+  color: var(--muted-text) !important;
 }
 
 .dashboard-card {
@@ -36,7 +53,7 @@
   border-radius: 10px;
   padding: 40px;
   text-align: center;
-  background-color: #f8f9fa;
+  background-color: var(--surface-2);
   transition: all 0.3s ease;
 }
 
@@ -102,8 +119,8 @@
 .stats-card {
   border: none;
   border-radius: 10px;
-  background: linear-gradient(135deg, #007bff, #0056b3);
-  color: white;
+  background: linear-gradient(135deg, var(--primary), #0056b3);
+  color: var(--primary-contrast);
 }
 
 .stats-card h3 {
@@ -113,7 +130,7 @@
 }
 
 .btn-primary-custom {
-  background: linear-gradient(135deg, #007bff, #0056b3);
+  background: linear-gradient(135deg, var(--primary), #1e40af);
   border: none;
   border-radius: 25px;
   padding: 10px 30px;

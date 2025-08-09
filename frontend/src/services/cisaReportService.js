@@ -8,7 +8,7 @@ class CISAReportService {
    * @param {number} year - Year
    * @returns {Promise<Object>} Preview data
    */
-  async previewAdvisories(month, year) {
+  async previewAdvisories(month, year, page = 1, pageSize = 10) {
     try {
       const token = localStorage.getItem('token');
       const response = await fetch(`${API_BASE_URL}/api/admin/preview-cisa-advisories`, {
@@ -17,7 +17,7 @@ class CISAReportService {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ month, year })
+        body: JSON.stringify({ month, year, page, pageSize })
       });
 
       if (!response.ok) {
