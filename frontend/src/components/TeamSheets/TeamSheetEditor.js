@@ -106,33 +106,35 @@ const TeamSheetEditor = () => {
       setLoading(true);
       setError('');
       
-      // Get sheet entries
-      const entriesData = await sheetService.getSheetEntries(sheetId);
-      setEntries(entriesData);
+      // Get user's team ID
+      const currentUser = authService.getCurrentUser();
+      const teamId = currentUser?.team_id;
       
-      // Get sheet details from team sheets
-      const teamSheets = await sheetService.getMyTeamSheets();
-      const currentSheet = teamSheets.find(s => s.id === parseInt(sheetId));
-      setSheet(currentSheet);
+      if (!teamId) {
+        throw new Error('User is not assigned to a team');
+      }
       
-      // Initialize responses object
+      // Get team-specific sheet data
+      const teamSheetData = await sheetService.getTeamSheetData(sheetId, teamId);
+      setSheet(teamSheetData.sheet);
+      setEntries(teamSheetData.responses);
+      
+      // Initialize responses object from team responses
       const initialResponses = {};
-      entriesData.forEach(entry => {
-        initialResponses[entry.id] = {
-          current_status: entry.current_status || '',
-          comments: entry.comments || '',
-          date: entry.date || '',
-          deployed_in_ke: entry.deployed_in_ke || 'N',
-          risk_level: entry.risk_level || '',
-          vendor_contacted: entry.vendor_contacted || '',
-          vendor_contact_date: entry.vendor_contact_date || '',
-          patching_est_release_date: entry.patching_est_release_date || '',
-          implementation_date: entry.implementation_date || '',
-          compensatory_controls_provided: entry.compensatory_controls_provided || '',
-          compensatory_controls_details: entry.compensatory_controls_details || '',
-          estimated_time: entry.estimated_time || '',
-          site: entry.site || '',
-          patching: entry.patching || ''
+      teamSheetData.responses.forEach(response => {
+        initialResponses[response.id] = {
+          current_status: response.current_status || '',
+          comments: response.comments || '',
+          deployed_in_ke: response.deployed_in_ke || 'N',
+          vendor_contacted: response.vendor_contacted || '',
+          vendor_contact_date: response.vendor_contact_date || '',
+          patching_est_release_date: response.patching_est_release_date || '',
+          implementation_date: response.implementation_date || '',
+          compensatory_controls_provided: response.compensatory_controls_provided || '',
+          compensatory_controls_details: response.compensatory_controls_details || '',
+          estimated_time: response.estimated_time || '',
+          site: response.site || '',
+          patching: response.patching || ''
         };
       });
       setResponses(initialResponses);
@@ -149,16 +151,26 @@ const TeamSheetEditor = () => {
   const autoSaveEntry = async (entryId, responseData) => {
     try {
       setAutoSaving(true);
-      console.log(`Auto-saving entry ${entryId} with data:`, responseData);
+      console.log(`Auto-saving team response ${entryId} with data:`, responseData);
       
-      // Add cache-busting timestamp to prevent caching issues
-      const entryDataWithTimestamp = {
-        ...responseData,
-        _timestamp: Date.now()
-      };
-      await sheetService.updateEntry(entryId, entryDataWithTimestamp);
+      // Update the team response in the sheet_responses table
+      const currentUser = authService.getCurrentUser();
+      const teamId = currentUser?.team_id;
+      
+      if (!teamId) {
+        throw new Error('User is not assigned to a team');
+      }
+      
+      // Find the team response record
+      const response = entries.find(r => r.id === entryId);
+      if (!response) {
+        throw new Error('Response not found');
+      }
+      
+      // Update the team response
+      await sheetService.updateTeamResponse(response.id, responseData);
       setLastSaved(new Date());
-      console.log(`✅ Auto-saved entry ${entryId} successfully`);
+      console.log(`✅ Auto-saved team response ${entryId} successfully`);
       
       // Immediately force a state update to reflect changes in UI
       setResponses(prev => ({
@@ -167,7 +179,7 @@ const TeamSheetEditor = () => {
       }));
       
     } catch (error) {
-      console.error(`❌ Failed to auto-save entry ${entryId}:`, error);
+      console.error(`❌ Failed to auto-save team response ${entryId}:`, error);
       // Don't show error for auto-saves to avoid overwhelming the user
     } finally {
       setAutoSaving(false);

@@ -195,10 +195,10 @@ const TeamSheets = ({ user }) => {
                         
                         {(sheet.assignment_status === 'assigned' || sheet.assignment_status === 'in_progress') && (
                           <Link 
-                            to={`/team-sheets/${sheet.id}/edit-with-locking`}
+                            to={`/team-sheets/${sheet.id}/edit`}
                             className="btn btn-primary btn-sm"
                           >
-                            <i className="fas fa-lock me-1"></i>
+                            <i className="fas fa-edit me-1"></i>
                             Select & Edit
                           </Link>
                         )}

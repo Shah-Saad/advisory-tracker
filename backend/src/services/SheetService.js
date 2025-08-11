@@ -84,7 +84,6 @@ class SheetService {
       description,
       file_name: fileInfo ? fileInfo.originalName : null,
       file_path: fileInfo ? fileInfo.path : null,
-      file_type: fileInfo ? fileInfo.extension.replace('.', '') : null,
       month_year: month_year.length === 7 ? `${month_year}-01` : month_year,
       uploaded_by: createdBy,
       status: 'draft'
@@ -752,8 +751,6 @@ class SheetService {
       throw new Error('Team not assigned to this sheet');
     }
 
-    // Get live data from sheet_entries for admin visibility
-    // This allows admins to see real-time updates as users edit entries
     const db = require('../config/db');
     
     // Get team information for reference
@@ -762,44 +759,297 @@ class SheetService {
       throw new Error('Team not found');
     }
 
-    // First, try to get entries specifically assigned to this team
-    let responses = await db('sheet_entries')
+    // Get all original entries for this sheet
+    const originalEntries = await db('sheet_entries')
+      .where('sheet_id', sheetId)
+      .select('*')
+      .orderBy('id');
+
+    // Get team-specific responses from sheet_responses table
+    const teamResponses = await db('sheet_responses as sr')
+      .join('sheet_entries as se', 'sr.original_entry_id', 'se.id')
+      .join('team_sheets as ts', 'sr.team_sheet_id', 'ts.id')
+      .where('ts.sheet_id', sheetId)
+      .where('ts.team_id', teamId)
+      .select(
+        'sr.*',
+        'se.product_name',
+        'se.oem_vendor as vendor_name',
+        'se.cve',
+        'se.source',
+        'se.risk_level as original_risk_level',
+        'se.site as original_site'
+      )
+      .orderBy('sr.id');
+
+    // If no team responses exist yet, initialize them
+    if (teamResponses.length === 0 && originalEntries.length > 0) {
+      console.log(`Initializing team responses for team ${team.name} (ID: ${teamId}) in sheet ${sheetId}`);
+      await SheetResponseService.initializeTeamSheetResponses(sheetId, [teamId], assignment.assigned_by);
+      
+      // Fetch the newly created responses
+      const newResponses = await db('sheet_responses as sr')
+        .join('sheet_entries as se', 'sr.original_entry_id', 'se.id')
+        .join('team_sheets as ts', 'sr.team_sheet_id', 'ts.id')
+        .where('ts.sheet_id', sheetId)
+        .where('ts.team_id', teamId)
+        .select(
+          'sr.*',
+          'se.product_name',
+          'se.oem_vendor as vendor_name',
+          'se.cve',
+          'se.source',
+          'se.risk_level as original_risk_level',
+          'se.site as original_site'
+        )
+        .orderBy('sr.id');
+      
+      return {
+        sheet,
+        assignment,
+        responses: newResponses,
+        response_count: newResponses.length,
+        completion_percentage: assignment.completion_percentage || 0,
+        data_source: 'team_responses',
+        display_mode: 'team_specific'
+      };
+    }
+
+    return {
+      sheet,
+      assignment,
+      responses: teamResponses,
+      response_count: teamResponses.length,
+      completion_percentage: assignment.completion_percentage || 0,
+      data_source: 'team_responses',
+      display_mode: 'team_specific'
+    };
+  }
+
+  // Enhanced method for admin live viewing of all team responses
+  static async getAdminLiveView(sheetId) {
+    const sheet = await Sheet.findById(sheetId);
+    if (!sheet) {
+      throw new Error('Sheet not found');
+    }
+
+    const db = require('../config/db');
+    
+    // Get all teams assigned to this sheet
+    const teamAssignments = await db('team_sheets')
+      .join('teams', 'team_sheets.team_id', 'teams.id')
+      .where('team_sheets.sheet_id', sheetId)
+      .select(
+        'teams.id as team_id',
+        'teams.name as team_name',
+        'team_sheets.status as assignment_status',
+        'team_sheets.assigned_at',
+        'team_sheets.completed_at'
+      );
+
+    // Get all original entries for this sheet
+    const allEntries = await db('sheet_entries')
+      .where('sheet_id', sheetId)
+      .select('*')
+      .orderBy('id');
+
+    // Get all team responses for this sheet
+    const allTeamResponses = await db('sheet_responses as sr')
+      .join('sheet_entries as se', 'sr.original_entry_id', 'se.id')
+      .join('team_sheets as ts', 'sr.team_sheet_id', 'ts.id')
+      .join('teams as t', 'ts.team_id', 't.id')
+      .where('ts.sheet_id', sheetId)
+      .select(
+        'sr.*',
+        'se.product_name',
+        'se.oem_vendor as vendor_name',
+        'se.cve',
+        'se.source',
+        'se.risk_level as original_risk_level',
+        'se.site as original_site',
+        't.name as team_name',
+        't.id as team_id'
+      )
+      .orderBy('t.name', 'se.id');
+
+    // Organize data by team
+    const teamViews = teamAssignments.map(assignment => {
+      const teamEntries = allEntries.filter(entry => 
+        entry.assigned_team === assignment.team_name ||
+        entry.assigned_team === assignment.team_id.toString() ||
+        entry.team === assignment.team_name ||
+        entry.team === assignment.team_id.toString()
+      );
+
+      const teamResponses = submittedResponses.filter(response => 
+        response.team_id === assignment.team_id
+      );
+
+      // Calculate completion statistics
+      const totalEntries = teamEntries.length;
+      const completedEntries = teamEntries.filter(entry => 
+        entry.current_status === 'Completed' || entry.is_completed
+      ).length;
+      const inProgressEntries = teamEntries.filter(entry => 
+        entry.current_status === 'In Progress'
+      ).length;
+      const pendingEntries = teamEntries.filter(entry => 
+        entry.current_status === 'Pending'
+      ).length;
+
+      return {
+        team_id: assignment.team_id,
+        team_name: assignment.team_name,
+        assignment_status: assignment.assignment_status,
+        assigned_at: assignment.assigned_at,
+        completed_at: assignment.completed_at,
+        entries: teamEntries,
+        submitted_responses: teamResponses,
+        statistics: {
+          total_entries: totalEntries,
+          completed_entries: completedEntries,
+          in_progress_entries: inProgressEntries,
+          pending_entries: pendingEntries,
+          completion_percentage: totalEntries > 0 ? Math.round((completedEntries / totalEntries) * 100) : 0
+        },
+        last_updated: teamEntries.length > 0 ? 
+          Math.max(...teamEntries.map(e => new Date(e.updated_at || e.created_at).getTime())) : null
+      };
+    });
+
+    // Overall sheet statistics
+    const totalEntries = allEntries.length;
+    const totalCompleted = allEntries.filter(entry => 
+      entry.current_status === 'Completed' || entry.is_completed
+    ).length;
+    const totalInProgress = allEntries.filter(entry => 
+      entry.current_status === 'In Progress'
+    ).length;
+
+    return {
+      sheet: {
+        ...sheet,
+        total_entries,
+        total_completed: totalCompleted,
+        total_in_progress: totalInProgress,
+        overall_completion_percentage: totalEntries > 0 ? Math.round((totalCompleted / totalEntries) * 100) : 0
+      },
+      team_views: teamViews,
+      all_entries: allEntries,
+      last_activity: allEntries.length > 0 ? 
+        Math.max(...allEntries.map(e => new Date(e.updated_at || e.created_at).getTime())) : null,
+      view_mode: 'admin_live_view'
+    };
+  }
+
+  // Get real-time updates for a specific team's entries
+  static async getTeamLiveUpdates(sheetId, teamId, lastUpdateTime = null) {
+    const db = require('../config/db');
+    
+    // Get team information
+    const team = await db('teams').where('id', teamId).first();
+    if (!team) {
+      throw new Error('Team not found');
+    }
+
+    // Build query for entries with optional time filter
+    let query = db('sheet_entries')
       .where('sheet_id', sheetId)
       .where(function() {
         this.where('assigned_team', team.name)
           .orWhere('assigned_team', teamId.toString())
           .orWhere('team', team.name)
           .orWhere('team', teamId.toString());
-      })
+      });
+
+    // If lastUpdateTime is provided, only get entries updated since then
+    if (lastUpdateTime) {
+      query = query.where('updated_at', '>', lastUpdateTime);
+    }
+
+    const updatedEntries = await query
       .select('*')
-      .orderBy('id');
-
-    // If no team-specific entries found, return ALL entries for this sheet
-    // This enables admin visibility of all data during the editing phase
-    if (responses.length === 0) {
-      console.log(`No team-specific entries found, returning all entries for sheet ${sheetId} (admin view)`);
-      responses = await db('sheet_entries')
-        .where('sheet_id', sheetId)
-        .select('*')
-        .orderBy('id');
-    } else {
-      console.log(`Found ${responses.length} team-specific entries for team ${team.name} (ID: ${teamId}) in sheet ${sheetId}`);
-    }
-
-    // If still no entries, fall back to original sheet_responses method for backward compatibility
-    if (responses.length === 0) {
-      console.log(`No live entries found for sheet ${sheetId}, checking submitted responses...`);
-      responses = await SheetResponse.findByTeamSheet(sheetId, teamId);
-    }
+      .orderBy('updated_at', 'desc');
 
     return {
-      sheet,
-      assignment,
-      responses,
-      response_count: responses.length,
-      completion_percentage: assignment.completion_percentage || 0,
-      data_source: responses.length > 0 && responses[0].original_entry_id ? 'submitted_responses' : 'live_entries',
-      display_mode: responses.length > 0 && !responses[0].original_entry_id ? 'all_entries_live_view' : 'team_specific'
+      team_id: teamId,
+      team_name: team.name,
+      updated_entries: updatedEntries,
+      update_count: updatedEntries.length,
+      last_update: new Date().toISOString()
+    };
+  }
+
+  // Get summary of all teams' progress for admin dashboard
+  static async getSheetProgressSummary(sheetId) {
+    const db = require('../config/db');
+    
+    const sheet = await Sheet.findById(sheetId);
+    if (!sheet) {
+      throw new Error('Sheet not found');
+    }
+
+    // Get all entries for this sheet
+    const allEntries = await db('sheet_entries')
+      .where('sheet_id', sheetId)
+      .select('*');
+
+    // Get team assignments
+    const teamAssignments = await db('team_sheets')
+      .join('teams', 'team_sheets.team_id', 'teams.id')
+      .where('team_sheets.sheet_id', sheetId)
+      .select(
+        'teams.id as team_id',
+        'teams.name as team_name',
+        'team_sheets.status as assignment_status'
+      );
+
+    // Calculate progress for each team
+    const teamProgress = teamAssignments.map(assignment => {
+      const teamEntries = allEntries.filter(entry => 
+        entry.assigned_team === assignment.team_name ||
+        entry.assigned_team === assignment.team_id.toString() ||
+        entry.team === assignment.team_name ||
+        entry.team === assignment.team_id.toString()
+      );
+
+      const completed = teamEntries.filter(entry => 
+        entry.current_status === 'Completed' || entry.is_completed
+      ).length;
+      const inProgress = teamEntries.filter(entry => 
+        entry.current_status === 'In Progress'
+      ).length;
+      const pending = teamEntries.filter(entry => 
+        entry.current_status === 'Pending'
+      ).length;
+
+      return {
+        team_id: assignment.team_id,
+        team_name: assignment.team_name,
+        assignment_status: assignment.assignment_status,
+        total_entries: teamEntries.length,
+        completed_entries: completed,
+        in_progress_entries: inProgress,
+        pending_entries: pending,
+        completion_percentage: teamEntries.length > 0 ? Math.round((completed / teamEntries.length) * 100) : 0
+      };
+    });
+
+    // Overall statistics
+    const totalEntries = allEntries.length;
+    const totalCompleted = allEntries.filter(entry => 
+      entry.current_status === 'Completed' || entry.is_completed
+    ).length;
+
+    return {
+      sheet_id: sheetId,
+      sheet_title: sheet.title,
+      total_entries,
+      total_completed: totalCompleted,
+      overall_completion_percentage: totalEntries > 0 ? Math.round((totalCompleted / totalEntries) * 100) : 0,
+      team_progress: teamProgress,
+      last_updated: allEntries.length > 0 ? 
+        Math.max(...allEntries.map(e => new Date(e.updated_at || e.created_at).getTime())) : null
     };
   }
 }

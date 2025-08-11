@@ -19,7 +19,7 @@ exports.seed = async function(knex) {
       is_active: true
     },
     {
-      name: 'General',
+      name: 'Generation',
       description: 'General team for cross-functional activities and administration',
       is_active: true
     }

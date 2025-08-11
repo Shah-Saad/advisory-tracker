@@ -48,6 +48,12 @@ router.get('/:id/export', requireAnyPermission(['export_sheet_data']), sheetCont
 // Admin-only team-specific sheet views
 router.get('/:id/team-views', requirePermission('read_sheets'), sheetController.getSheetByTeams);
 router.get('/:id/team/:teamId', requirePermission('read_sheets'), sheetController.getSheetForTeam);
-router.get('/:id/team-data/:teamKey', requirePermission('read_sheets'), sheetController.getTeamSheetData);
+router.get('/:id/team-data/:teamKey', requirePermission('read_sheets'), sheetController.getTeamSheetDataByKey);
+router.get('/:id/team-id/:teamId', requireAnyPermission(['read_sheets', 'fill_sheets']), sheetController.getTeamSheetDataById);
+
+// Admin-only live viewing routes
+router.get('/:id/live-view', requirePermission('read_sheets'), sheetController.getAdminLiveView);
+router.get('/:id/progress-summary', requirePermission('read_sheets'), sheetController.getSheetProgressSummary);
+router.get('/:id/team/:teamId/live-updates', requirePermission('read_sheets'), sheetController.getTeamLiveUpdates);
 
 module.exports = router;

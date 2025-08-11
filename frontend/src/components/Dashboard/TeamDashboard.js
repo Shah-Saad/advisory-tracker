@@ -236,10 +236,10 @@ const TeamDashboard = ({ user }) => {
                           <td className="text-center">
                             {sheet.assignment_status !== 'completed' ? (
                               <Link 
-                                to={`/team-sheets/${sheet.id}/edit-with-locking`}
+                                to={`/team-sheets/${sheet.id}/edit`}
                                 className="btn btn-sm btn-primary"
                               >
-                                <i className="fas fa-lock me-1"></i>
+                                <i className="fas fa-edit me-1"></i>
                                 Select & Edit
                               </Link>
                             ) : (

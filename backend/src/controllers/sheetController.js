@@ -31,8 +31,7 @@ const sheetController = {
       const teamMap = {
         'generation': 44,
         'distribution': 41,
-        'transmission': 42,
-        'general': 43
+        'transmission': 42
       };
       
       const teamId = teamMap[teamKey.toLowerCase()];
@@ -44,6 +43,44 @@ const sheetController = {
       res.json(teamData);
     } catch (error) {
       const statusCode = error.message === 'Sheet not found' ? 404 : 500;
+      res.status(statusCode).json({ error: error.message });
+    }
+  },
+
+  // Get admin live view of all team responses (Admin only)
+  async getAdminLiveView(req, res) {
+    try {
+      const { id } = req.params;
+      const liveView = await SheetService.getAdminLiveView(id);
+      res.json(liveView);
+    } catch (error) {
+      const statusCode = error.message === 'Sheet not found' ? 404 : 500;
+      res.status(statusCode).json({ error: error.message });
+    }
+  },
+
+  // Get sheet progress summary for admin dashboard (Admin only)
+  async getSheetProgressSummary(req, res) {
+    try {
+      const { id } = req.params;
+      const summary = await SheetService.getSheetProgressSummary(id);
+      res.json(summary);
+    } catch (error) {
+      const statusCode = error.message === 'Sheet not found' ? 404 : 500;
+      res.status(statusCode).json({ error: error.message });
+    }
+  },
+
+  // Get real-time updates for a specific team (Admin only)
+  async getTeamLiveUpdates(req, res) {
+    try {
+      const { id, teamId } = req.params;
+      const { lastUpdateTime } = req.query;
+      
+      const updates = await SheetService.getTeamLiveUpdates(id, teamId, lastUpdateTime);
+      res.json(updates);
+    } catch (error) {
+      const statusCode = error.message === 'Sheet not found' || error.message === 'Team not found' ? 404 : 500;
       res.status(statusCode).json({ error: error.message });
     }
   },
@@ -430,8 +467,20 @@ const sheetController = {
     }
   },
 
-  // Get detailed team sheet data (Admin only)
-  async getTeamSheetData(req, res) {
+  // Get team sheet data using numeric teamId (for team members)
+  async getTeamSheetDataById(req, res) {
+    try {
+      const { id, teamId } = req.params;
+      const teamData = await SheetService.getTeamSheetData(id, parseInt(teamId));
+      res.json(teamData);
+    } catch (error) {
+      const statusCode = error.message === 'Sheet not found' ? 404 : 500;
+      res.status(statusCode).json({ error: error.message });
+    }
+  },
+
+  // Get detailed team sheet data using teamKey (Admin only)
+  async getTeamSheetDataByKey(req, res) {
     try {
       const { id, teamKey } = req.params;
       

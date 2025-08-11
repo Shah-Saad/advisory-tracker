@@ -13,7 +13,7 @@ const permissionRoutes = require('./routes/permissions');
 const teamRoutes = require('./routes/teams');
 const sheetRoutes = require('./routes/sheets');
 const sheetEntryRoutes = require('./routes/sheetEntries');
-const entryLockingRoutes = require('./routes/entryLocking');
+
 const productRoutes = require('./routes/products');
 const vendorRoutes = require('./routes/vendors');
 const notificationRoutes = require('./routes/notifications');
@@ -42,7 +42,7 @@ app.use('/api/permissions', permissionRoutes);
 app.use('/api/teams', teamRoutes);
 app.use('/api/sheets', sheetRoutes);
 app.use('/api/sheet-entries', sheetEntryRoutes);
-app.use('/api/entry-locking', entryLockingRoutes);
+
 app.use('/api/products', productRoutes);
 app.use('/api/vendors', vendorRoutes);
 app.use('/api/team-responses', teamResponseRoutes);

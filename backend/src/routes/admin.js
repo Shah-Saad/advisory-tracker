@@ -309,6 +309,8 @@ router.patch('/users/:id/team', async (req, res) => {
   }
 });
 
+
+
 // Generate CISA Advisory Excel Report
 router.post('/generate-cisa-report', async (req, res) => {
   try {
@@ -341,7 +343,7 @@ router.post('/generate-cisa-report', async (req, res) => {
     // Set headers for file download
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="${report.filename}"`);
-    res.setHeader('Content-Length', report.buffer.length);
+    // res.setHeader('Content-Length', report.buffer.length);
     
     console.log(`✅ CISA report generated: ${report.filename} (${report.count} advisories)`);
     
@@ -405,6 +407,26 @@ router.post('/preview-cisa-advisories', async (req, res) => {
       error: 'Failed to preview CISA advisories',
       message: error.message 
     });
+  }
+});
+
+// Admin team sheet routes
+const sheetController = require('../controllers/sheetController');
+
+// Team sheet management routes
+router.get('/team-sheets', async (req, res) => {
+  try {
+    const sheets = await sheetController.getAllSheetsWithTeamStatus(req, res);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to load team sheets' });
+  }
+});
+
+router.get('/team-sheets/:id/:teamKey', async (req, res) => {
+  try {
+    await sheetController.getTeamSheetDataByKey(req, res);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to load team sheet data' });
   }
 });
 

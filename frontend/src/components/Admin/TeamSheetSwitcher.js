@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { toast } from 'react-toastify';
 import sheetService from '../../services/sheetService';
 import './TeamSheetSwitcher.css';
@@ -11,10 +11,35 @@ const TeamSubmissionsOverview = () => {
   const [showTeamModal, setShowTeamModal] = useState(false);
   const [modalTeamData, setModalTeamData] = useState(null);
   const [modalLoading, setModalLoading] = useState(false);
+  const [liveViewSheets, setLiveViewSheets] = useState(new Set());
+  const [liveData, setLiveData] = useState({});
+  const [autoRefresh, setAutoRefresh] = useState(true);
+  const refreshIntervalRef = useRef(null);
 
   useEffect(() => {
     fetchSheets();
   }, []);
+
+  useEffect(() => {
+    if (autoRefresh && liveViewSheets.size > 0) {
+      // Set up auto-refresh every 30 seconds for live view sheets
+      refreshIntervalRef.current = setInterval(() => {
+        liveViewSheets.forEach(sheetId => {
+          loadLiveViewData(sheetId);
+        });
+      }, 30000);
+
+      return () => {
+        if (refreshIntervalRef.current) {
+          clearInterval(refreshIntervalRef.current);
+        }
+      };
+    } else {
+      if (refreshIntervalRef.current) {
+        clearInterval(refreshIntervalRef.current);
+      }
+    }
+  }, [autoRefresh, liveViewSheets]);
 
   const handleDeleteSheet = async (sheetId, sheetTitle) => {
     // Show confirmation dialog
@@ -88,6 +113,68 @@ const TeamSubmissionsOverview = () => {
     }
   };
 
+  const loadLiveViewData = async (sheetId) => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`/api/sheets/${sheetId}/live-view`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setLiveData(prev => ({
+          ...prev,
+          [sheetId]: data
+        }));
+      } else {
+        console.error('Failed to load live view data for sheet:', sheetId);
+      }
+    } catch (error) {
+      console.error('Error loading live view data:', error);
+    }
+  };
+
+  const toggleLiveView = async (sheetId) => {
+    const newLiveViewSheets = new Set(liveViewSheets);
+    
+    if (newLiveViewSheets.has(sheetId)) {
+      newLiveViewSheets.delete(sheetId);
+      // Remove live data for this sheet
+      setLiveData(prev => {
+        const newData = { ...prev };
+        delete newData[sheetId];
+        return newData;
+      });
+    } else {
+      newLiveViewSheets.add(sheetId);
+      // Load initial live data
+      await loadLiveViewData(sheetId);
+    }
+    
+    setLiveViewSheets(newLiveViewSheets);
+  };
+
+  const getLiveViewStatusBadgeClass = (status) => {
+    const statusMap = {
+      'New': 'badge-info',
+      'In Progress': 'badge-warning',
+      'Pending': 'badge-warning',
+      'Completed': 'badge-success',
+      'Blocked': 'badge-danger',
+      'Not Applicable': 'badge-secondary'
+    };
+    return statusMap[status] || 'badge-secondary';
+  };
+
+  const getProgressBarClass = (percentage) => {
+    if (percentage >= 80) return 'bg-success';
+    if (percentage >= 50) return 'bg-warning';
+    return 'bg-secondary';
+  };
+
   if (loading) {
     return (
       <div className="d-flex justify-content-center p-4">
@@ -145,6 +232,14 @@ const TeamSubmissionsOverview = () => {
                       {sheet.status}
                     </span>
                     <button
+                      className={`btn btn-sm ${liveViewSheets.has(sheet.id) ? 'btn-success' : 'btn-outline-primary'}`}
+                      onClick={() => toggleLiveView(sheet.id)}
+                      title={liveViewSheets.has(sheet.id) ? 'Disable Live View' : 'Enable Live View'}
+                    >
+                      <i className={`fas ${liveViewSheets.has(sheet.id) ? 'fa-eye-slash' : 'fa-eye'}`}></i>
+                      {liveViewSheets.has(sheet.id) ? ' Live View ON' : ' Live View'}
+                    </button>
+                    <button
                       className="btn btn-danger btn-sm"
                       onClick={() => handleDeleteSheet(sheet.id, sheet.title)}
                       disabled={deletingSheet === sheet.id}
@@ -160,6 +255,131 @@ const TeamSubmissionsOverview = () => {
                 </div>
                 <div className="card-body">
                   <TeamSubmissionTable sheetId={sheet.id} />
+                  
+                  {/* Live View Section */}
+                  {liveViewSheets.has(sheet.id) && liveData[sheet.id] && (
+                    <div className="live-view-section mt-4">
+                      <div className="d-flex justify-content-between align-items-center mb-3">
+                        <h6 className="mb-0">
+                          <i className="fas fa-eye text-success me-2"></i>
+                          Live View - Real-time Updates
+                        </h6>
+                        <div className="form-check form-switch">
+                          <input
+                            className="form-check-input"
+                            type="checkbox"
+                            id={`autoRefresh-${sheet.id}`}
+                            checked={autoRefresh}
+                            onChange={(e) => setAutoRefresh(e.target.checked)}
+                          />
+                          <label className="form-check-label" htmlFor={`autoRefresh-${sheet.id}`}>
+                            Auto-refresh
+                          </label>
+                        </div>
+                      </div>
+                      
+                      {/* Overall Statistics */}
+                      <div className="row mb-3">
+                        <div className="col-md-3">
+                          <div className="card bg-light">
+                            <div className="card-body text-center">
+                              <h4 className="text-primary">{liveData[sheet.id].sheet?.total_entries || 0}</h4>
+                              <small className="text-muted">Total Entries</small>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="col-md-3">
+                          <div className="card bg-light">
+                            <div className="card-body text-center">
+                              <h4 className="text-success">{liveData[sheet.id].sheet?.total_completed || 0}</h4>
+                              <small className="text-muted">Completed</small>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="col-md-3">
+                          <div className="card bg-light">
+                            <div className="card-body text-center">
+                              <h4 className="text-warning">{liveData[sheet.id].sheet?.total_in_progress || 0}</h4>
+                              <small className="text-muted">In Progress</small>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="col-md-3">
+                          <div className="card bg-light">
+                            <div className="card-body text-center">
+                              <h4 className="text-info">{liveData[sheet.id].sheet?.overall_completion_percentage || 0}%</h4>
+                              <small className="text-muted">Completion</small>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Team Progress Cards */}
+                      <div className="row">
+                        {liveData[sheet.id].team_views?.map((teamView) => (
+                          <div key={teamView.team_id} className="col-md-6 col-lg-4 mb-3">
+                            <div className="card">
+                              <div className="card-header">
+                                <h6 className="mb-0">{teamView.team_name}</h6>
+                              </div>
+                              <div className="card-body">
+                                <div className="mb-2">
+                                  <div className="d-flex justify-content-between mb-1">
+                                    <small>Progress</small>
+                                    <small>{teamView.statistics.completion_percentage}%</small>
+                                  </div>
+                                  <div className="progress" style={{ height: '8px' }}>
+                                    <div
+                                      className={`progress-bar ${getProgressBarClass(teamView.statistics.completion_percentage)}`}
+                                      style={{ width: `${teamView.statistics.completion_percentage}%` }}
+                                    ></div>
+                                  </div>
+                                </div>
+                                <div className="row text-center">
+                                  <div className="col-4">
+                                    <div className="text-success">
+                                      <strong>{teamView.statistics.completed_entries}</strong>
+                                      <br />
+                                      <small>Done</small>
+                                    </div>
+                                  </div>
+                                  <div className="col-4">
+                                    <div className="text-warning">
+                                      <strong>{teamView.statistics.in_progress_entries}</strong>
+                                      <br />
+                                      <small>In Progress</small>
+                                    </div>
+                                  </div>
+                                  <div className="col-4">
+                                    <div className="text-secondary">
+                                      <strong>{teamView.statistics.pending_entries}</strong>
+                                      <br />
+                                      <small>Pending</small>
+                                    </div>
+                                  </div>
+                                </div>
+                                {teamView.last_updated && (
+                                  <small className="text-muted d-block mt-2">
+                                    Last updated: {new Date(teamView.last_updated).toLocaleTimeString()}
+                                  </small>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Recent Activity */}
+                      {liveData[sheet.id].last_activity && (
+                        <div className="mt-3">
+                          <small className="text-muted">
+                            <i className="fas fa-clock me-1"></i>
+                            Last activity: {new Date(liveData[sheet.id].last_activity).toLocaleString()}
+                          </small>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

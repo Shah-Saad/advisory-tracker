@@ -19,6 +19,10 @@ const EntryList = () => {
   const [showViewModal, setShowViewModal] = useState(false);
   const [modalLoading, setModalLoading] = useState(false);
   const [highlightedEntryId, setHighlightedEntryId] = useState(null);
+  const [quickMarkingEntry, setQuickMarkingEntry] = useState(null);
+  const [markingLoading, setMarkingLoading] = useState(false);
+  const [selectedEntries, setSelectedEntries] = useState(new Set());
+  const [bulkMarkingLoading, setBulkMarkingLoading] = useState(false);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
@@ -179,6 +183,179 @@ const EntryList = () => {
   const handleCancelEdit = () => {
     setEditingEntry(null);
     setEditForm({});
+  };
+
+  const handleQuickMarkStatus = async (entryId, newStatus) => {
+    try {
+      setMarkingLoading(true);
+      setQuickMarkingEntry(entryId);
+      
+      const updateData = {
+        current_status: newStatus,
+        status: newStatus
+      };
+      
+      // If marking as completed, set completion timestamp
+      if (newStatus.toLowerCase() === 'completed') {
+        updateData.is_completed = true;
+        updateData.completed_at = new Date().toISOString();
+      }
+      
+      await sheetService.updateEntry(entryId, updateData);
+      
+      // Update the local state
+      setEntries(prevEntries => 
+        prevEntries.map(entry => 
+          entry.id === entryId 
+            ? { ...entry, ...updateData }
+            : entry
+        )
+      );
+      
+      // Show success message
+      const toastMessage = document.createElement('div');
+      toastMessage.className = 'alert alert-success alert-dismissible fade show position-fixed';
+      toastMessage.style.cssText = 'top: 20px; right: 20px; z-index: 9999; max-width: 350px;';
+      toastMessage.innerHTML = `
+        <strong>Status Updated!</strong><br/>
+        Entry marked as "${newStatus}".
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+      `;
+      document.body.appendChild(toastMessage);
+      
+      // Remove toast after 3 seconds
+      setTimeout(() => {
+        if (toastMessage.parentNode) {
+          toastMessage.parentNode.removeChild(toastMessage);
+        }
+      }, 3000);
+      
+    } catch (error) {
+      console.error('Error updating entry status:', error);
+      
+      // Show error message
+      const toastMessage = document.createElement('div');
+      toastMessage.className = 'alert alert-danger alert-dismissible fade show position-fixed';
+      toastMessage.style.cssText = 'top: 20px; right: 20px; z-index: 9999; max-width: 350px;';
+      toastMessage.innerHTML = `
+        <strong>Error!</strong><br/>
+        Failed to update status: ${error.message}.
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+      `;
+      document.body.appendChild(toastMessage);
+      
+      // Remove toast after 5 seconds
+      setTimeout(() => {
+        if (toastMessage.parentNode) {
+          toastMessage.parentNode.removeChild(toastMessage);
+        }
+      }, 5000);
+    } finally {
+      setMarkingLoading(false);
+      setQuickMarkingEntry(null);
+    }
+  };
+
+  const handleBulkMarkStatus = async (newStatus) => {
+    if (selectedEntries.size === 0) {
+      alert('Please select at least one entry to mark.');
+      return;
+    }
+
+    try {
+      setBulkMarkingLoading(true);
+      
+      const updateData = {
+        current_status: newStatus,
+        status: newStatus
+      };
+      
+      // If marking as completed, set completion timestamp
+      if (newStatus.toLowerCase() === 'completed') {
+        updateData.is_completed = true;
+        updateData.completed_at = new Date().toISOString();
+      }
+      
+      // Update all selected entries
+      const updatePromises = Array.from(selectedEntries).map(entryId =>
+        sheetService.updateEntry(entryId, updateData)
+      );
+      
+      await Promise.all(updatePromises);
+      
+      // Update the local state
+      setEntries(prevEntries => 
+        prevEntries.map(entry => 
+          selectedEntries.has(entry.id)
+            ? { ...entry, ...updateData }
+            : entry
+        )
+      );
+      
+      // Clear selection
+      setSelectedEntries(new Set());
+      
+      // Show success message
+      const toastMessage = document.createElement('div');
+      toastMessage.className = 'alert alert-success alert-dismissible fade show position-fixed';
+      toastMessage.style.cssText = 'top: 20px; right: 20px; z-index: 9999; max-width: 350px;';
+      toastMessage.innerHTML = `
+        <strong>Bulk Update Complete!</strong><br/>
+        ${selectedEntries.size} entries marked as "${newStatus}".
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+      `;
+      document.body.appendChild(toastMessage);
+      
+      // Remove toast after 3 seconds
+      setTimeout(() => {
+        if (toastMessage.parentNode) {
+          toastMessage.parentNode.removeChild(toastMessage);
+        }
+      }, 3000);
+      
+    } catch (error) {
+      console.error('Error bulk updating entry status:', error);
+      
+      // Show error message
+      const toastMessage = document.createElement('div');
+      toastMessage.className = 'alert alert-danger alert-dismissible fade show position-fixed';
+      toastMessage.style.cssText = 'top: 20px; right: 20px; z-index: 9999; max-width: 350px;';
+      toastMessage.innerHTML = `
+        <strong>Error!</strong><br/>
+        Failed to update entries: ${error.message}.
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+      `;
+      document.body.appendChild(toastMessage);
+      
+      // Remove toast after 5 seconds
+      setTimeout(() => {
+        if (toastMessage.parentNode) {
+          toastMessage.parentNode.removeChild(toastMessage);
+        }
+      }, 5000);
+    } finally {
+      setBulkMarkingLoading(false);
+    }
+  };
+
+  const handleSelectEntry = (entryId) => {
+    setSelectedEntries(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(entryId)) {
+        newSet.delete(entryId);
+      } else {
+        newSet.add(entryId);
+      }
+      return newSet;
+    });
+  };
+
+  const handleSelectAll = () => {
+    if (selectedEntries.size === currentEntries.length) {
+      setSelectedEntries(new Set());
+    } else {
+      setSelectedEntries(new Set(currentEntries.map(entry => entry.id)));
+    }
   };
 
   const handleEditFormChange = (field, value) => {
@@ -509,6 +686,106 @@ const EntryList = () => {
                   </small>
                 </div>
               </div>
+              
+              {/* Bulk Actions */}
+              {selectedEntries.size > 0 && (
+                <div className="row mt-3">
+                  <div className="col-12">
+                    <div className="d-flex align-items-center gap-2">
+                      <span className="text-muted">
+                        <i className="fas fa-check-square me-1"></i>
+                        {selectedEntries.size} entry{selectedEntries.size !== 1 ? 'ies' : 'y'} selected
+                      </span>
+                      <div className="dropdown">
+                        <button
+                          className="btn btn-outline-primary btn-sm dropdown-toggle"
+                          type="button"
+                          data-bs-toggle="dropdown"
+                          aria-expanded="false"
+                          disabled={bulkMarkingLoading}
+                        >
+                          {bulkMarkingLoading ? (
+                            <>
+                              <i className="fas fa-spinner fa-spin me-1"></i>
+                              Updating...
+                            </>
+                          ) : (
+                            <>
+                              <i className="fas fa-flag me-1"></i>
+                              Mark Selected
+                            </>
+                          )}
+                        </button>
+                        <ul className="dropdown-menu">
+                          <li><h6 className="dropdown-header">Mark as:</h6></li>
+                          <li>
+                            <button
+                              className="dropdown-item"
+                              onClick={() => handleBulkMarkStatus('New')}
+                              disabled={bulkMarkingLoading}
+                            >
+                              <i className="fas fa-circle text-info me-2"></i>New
+                            </button>
+                          </li>
+                          <li>
+                            <button
+                              className="dropdown-item"
+                              onClick={() => handleBulkMarkStatus('In Progress')}
+                              disabled={bulkMarkingLoading}
+                            >
+                              <i className="fas fa-circle text-warning me-2"></i>In Progress
+                            </button>
+                          </li>
+                          <li>
+                            <button
+                              className="dropdown-item"
+                              onClick={() => handleBulkMarkStatus('Pending')}
+                              disabled={bulkMarkingLoading}
+                            >
+                              <i className="fas fa-circle text-warning me-2"></i>Pending
+                            </button>
+                          </li>
+                          <li>
+                            <button
+                              className="dropdown-item"
+                              onClick={() => handleBulkMarkStatus('Completed')}
+                              disabled={bulkMarkingLoading}
+                            >
+                              <i className="fas fa-circle text-success me-2"></i>Completed
+                            </button>
+                          </li>
+                          <li>
+                            <button
+                              className="dropdown-item"
+                              onClick={() => handleBulkMarkStatus('Blocked')}
+                              disabled={bulkMarkingLoading}
+                            >
+                              <i className="fas fa-circle text-danger me-2"></i>Blocked
+                            </button>
+                          </li>
+                          <li>
+                            <button
+                              className="dropdown-item"
+                              onClick={() => handleBulkMarkStatus('Not Applicable')}
+                              disabled={bulkMarkingLoading}
+                            >
+                              <i className="fas fa-circle text-secondary me-2"></i>Not Applicable
+                            </button>
+                          </li>
+                        </ul>
+                      </div>
+                      <button
+                        className="btn btn-outline-secondary btn-sm"
+                        onClick={() => setSelectedEntries(new Set())}
+                        disabled={bulkMarkingLoading}
+                      >
+                        <i className="fas fa-times me-1"></i>
+                        Clear Selection
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -522,12 +799,21 @@ const EntryList = () => {
                       <thead className="table-light">
                         {/* First row - Main headers with Patching spanning two columns */}
                         <tr>
+                          <th scope="col" rowSpan="2" style={{ verticalAlign: 'middle', width: '40px' }}>
+                            <input
+                              type="checkbox"
+                              className="form-check-input"
+                              checked={selectedEntries.size === currentEntries.length && currentEntries.length > 0}
+                              onChange={handleSelectAll}
+                              title="Select All"
+                            />
+                          </th>
                           <th 
                             scope="col" 
                             rowSpan="2"
                             style={{ cursor: 'pointer', verticalAlign: 'middle' }}
-                                            onClick={() => handleSort('vendor_name')}
-              >
+                            onClick={() => handleSort('vendor_name')}
+                          >
                 Vendor
                 {sortField === 'vendor_name' && (
                               <i className={`fas fa-sort-${sortDirection === 'asc' ? 'up' : 'down'} ms-1`}></i>
@@ -613,6 +899,15 @@ const EntryList = () => {
                               boxShadow: '0 0 15px rgba(255, 193, 7, 0.6)'
                             } : {}}
                           >
+                            <td>
+                              <input
+                                type="checkbox"
+                                className="form-check-input"
+                                checked={selectedEntries.has(entry.id)}
+                                onChange={() => handleSelectEntry(entry.id)}
+                                title="Select Entry"
+                              />
+                            </td>
                             <td>{entry.vendor_name || 'N/A'}</td>
                             <td>{entry.product_name || 'N/A'}</td>
                             <td>{renderSourceLink(entry.source)}</td>
@@ -807,9 +1102,95 @@ const EntryList = () => {
                                   placeholder="Status"
                                 />
                               ) : (
-                                <span className={`badge ${getStatusBadgeClass(entry.current_status)}`}>
-                                  {entry.current_status || 'N/A'}
-                                </span>
+                                <div className="d-flex align-items-center">
+                                  <span className={`badge ${getStatusBadgeClass(entry.current_status)} me-2`}>
+                                    {entry.current_status || 'N/A'}
+                                  </span>
+                                  {canEditEntry() && (
+                                    <div className="dropdown">
+                                      <button
+                                        className="btn btn-sm btn-outline-secondary dropdown-toggle"
+                                        type="button"
+                                        data-bs-toggle="dropdown"
+                                        aria-expanded="false"
+                                        disabled={markingLoading && quickMarkingEntry === entry.id}
+                                        title="Quick Mark Status"
+                                      >
+                                        {markingLoading && quickMarkingEntry === entry.id ? (
+                                          <i className="fas fa-spinner fa-spin"></i>
+                                        ) : (
+                                          <i className="fas fa-flag"></i>
+                                        )}
+                                      </button>
+                                      <ul className="dropdown-menu dropdown-menu-end">
+                                        <li><h6 className="dropdown-header">Mark as:</h6></li>
+                                        <li>
+                                          <button
+                                            className="dropdown-item"
+                                            onClick={() => handleQuickMarkStatus(entry.id, 'New')}
+                                            disabled={entry.current_status === 'New'}
+                                          >
+                                            <i className="fas fa-circle text-info me-2"></i>New
+                                          </button>
+                                        </li>
+                                        <li>
+                                          <button
+                                            className="dropdown-item"
+                                            onClick={() => handleQuickMarkStatus(entry.id, 'In Progress')}
+                                            disabled={entry.current_status === 'In Progress'}
+                                          >
+                                            <i className="fas fa-circle text-warning me-2"></i>In Progress
+                                          </button>
+                                        </li>
+                                        <li>
+                                          <button
+                                            className="dropdown-item"
+                                            onClick={() => handleQuickMarkStatus(entry.id, 'Pending')}
+                                            disabled={entry.current_status === 'Pending'}
+                                          >
+                                            <i className="fas fa-circle text-warning me-2"></i>Pending
+                                          </button>
+                                        </li>
+                                        <li>
+                                          <button
+                                            className="dropdown-item"
+                                            onClick={() => handleQuickMarkStatus(entry.id, 'Completed')}
+                                            disabled={entry.current_status === 'Completed'}
+                                          >
+                                            <i className="fas fa-circle text-success me-2"></i>Completed
+                                          </button>
+                                        </li>
+                                        <li>
+                                          <button
+                                            className="dropdown-item"
+                                            onClick={() => handleQuickMarkStatus(entry.id, 'Blocked')}
+                                            disabled={entry.current_status === 'Blocked'}
+                                          >
+                                            <i className="fas fa-circle text-danger me-2"></i>Blocked
+                                          </button>
+                                        </li>
+                                        <li>
+                                          <button
+                                            className="dropdown-item"
+                                            onClick={() => handleQuickMarkStatus(entry.id, 'Not Applicable')}
+                                            disabled={entry.current_status === 'Not Applicable'}
+                                          >
+                                            <i className="fas fa-circle text-secondary me-2"></i>Not Applicable
+                                          </button>
+                                        </li>
+                                        <li><hr className="dropdown-divider" /></li>
+                                        <li>
+                                          <button
+                                            className="dropdown-item text-muted"
+                                            onClick={() => handleEdit(entry)}
+                                          >
+                                            <i className="fas fa-edit me-2"></i>Edit Details
+                                          </button>
+                                        </li>
+                                      </ul>
+                                    </div>
+                                  )}
+                                </div>
                               )}
                             </td>
                             <td>

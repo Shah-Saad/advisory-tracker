@@ -188,6 +188,7 @@ class FileProcessingService {
     const mergeableColumns = [
       'OEM/Vendor', 
       'Vendor Name', 
+      'Product Name',  // Add Product Name to handle merged cells
       'Product Category',
       'Risk Level'
     ];

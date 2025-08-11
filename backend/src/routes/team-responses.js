@@ -6,6 +6,7 @@ const NotificationService = require('../services/NotificationService');
 const SheetResponse = require('../models/SheetResponse');
 const User = require('../models/User');
 const Team = require('../models/Team');
+const db = require('../config/db');
 
 // Get team's assigned sheet entries
 router.get('/sheets/:sheetId/entries', auth, async (req, res) => {
@@ -23,11 +24,13 @@ router.get('/sheets/:sheetId/entries', auth, async (req, res) => {
     }
 
     // Get team's sheet responses for this sheet
-    const responses = await SheetResponse.query()
-      .where('sheet_id', sheetId)
-      .where('team_id', user.team.id)
-      .withGraphFetched('[originalEntry, sheet]')
-      .orderBy('created_at', 'desc');
+    // Note: sheet_responses doesn't have team_id directly, need to join through team_sheets
+    const responses = await db('sheet_responses')
+      .join('team_sheets', 'sheet_responses.team_sheet_id', 'team_sheets.id')
+      .where('team_sheets.sheet_id', sheetId)
+      .where('team_sheets.team_id', user.team.id)
+      .select('sheet_responses.*')
+      .orderBy('sheet_responses.created_at', 'desc');
 
     // Format response data
     const formattedResponses = responses.map(response => ({
@@ -68,32 +71,29 @@ router.put('/responses/:responseId/status', auth, async (req, res) => {
     const { responseId } = req.params;
     const { status, comments, estimated_completion_date } = req.body;
     const userId = req.user.id;
+    const teamId = req.user.team_id;
 
-    // Get user's team
-    const user = await User.query()
-      .findById(userId)
-      .withGraphFetched('team');
-
-    if (!user || !user.team) {
+    if (!teamId) {
       return res.status(400).json({ error: 'User is not assigned to a team' });
     }
 
     // Verify the response belongs to the user's team
-    const response = await SheetResponse.query()
-      .findById(responseId)
-      .where('team_id', user.team.id);
+    const response = await db('sheet_responses')
+      .join('team_sheets', 'sheet_responses.team_sheet_id', 'team_sheets.id')
+      .where('sheet_responses.id', responseId)
+      .andWhere('team_sheets.team_id', teamId)
+      .select('sheet_responses.*')
+      .first();
 
     if (!response) {
       return res.status(404).json({ error: 'Response not found or access denied' });
     }
 
     // Update the response
-    const updatedResponse = await SheetResponse.query()
-      .patchAndFetchById(responseId, {
+    const updatedResponse = await SheetResponse.update(responseId, {
         status: status || response.status,
         comments: comments !== undefined ? comments : response.comments,
-        estimated_completion_date: estimated_completion_date || response.estimated_completion_date,
-        updated_at: new Date()
+        estimated_completion_date: estimated_completion_date || response.estimated_completion_date
       });
 
     // Create notification for admins if status changed to significant states
@@ -156,13 +156,11 @@ router.put('/responses/:responseId/complete', auth, async (req, res) => {
     }
 
     // Update the response as completed
-    const updatedResponse = await SheetResponse.query()
-      .patchAndFetchById(responseId, {
+    const updatedResponse = await SheetResponse.update(responseId, {
         status: 'completed',
         comments: comments !== undefined ? comments : response.comments,
         completion_notes: completion_notes || response.completion_notes,
-        patch_applied_date: patch_applied_date || new Date().toISOString().split('T')[0],
-        updated_at: new Date()
+        patch_applied_date: patch_applied_date || new Date().toISOString().split('T')[0]
       });
 
     // Create notification for admins

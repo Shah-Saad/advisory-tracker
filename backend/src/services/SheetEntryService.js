@@ -12,8 +12,13 @@ class SheetEntryService {
       const columnMapping = {
         // Basic product information
         'Product Name': 'product_name',
+        'Product': 'product_name',
+        'Name': 'product_name',
+        'Product/Name': 'product_name',
         'OEM/Vendor': 'oem_vendor',
         'Vendor Name': 'oem_vendor', // Map vendor_name to oem_vendor to consolidate
+        'Vendor': 'oem_vendor',
+        'Manufacturer': 'oem_vendor',
         'Source': 'source',
         
         // Location and deployment
@@ -36,9 +41,7 @@ class SheetEntryService {
         'Patching Est. Release Date': 'patching_est_release_date',
         'Implementation Date': 'implementation_date',
         'Implementation Time': 'implementation_date', // Alternative header
-        'Testing Date': 'testing_date',
-        'Approval Date': 'approval_date',
-        'Compliance Deadline': 'compliance_deadline',
+      
         
         // Vendor interaction
         'Vendor Contacted': 'vendor_contacted',
@@ -77,10 +80,7 @@ class SheetEntryService {
         'Notes': 'notes',
         'Testing Results': 'testing_results',
         
-        // Compliance
-        'Compliance Required': 'compliance_required',
-        'Compliance Framework': 'compliance_framework',
-        'Testing Completed': 'testing_completed'
+
       };
       
       // Convert processed data to database entries
@@ -93,10 +93,11 @@ class SheetEntryService {
             ? Object.values(row) 
             : row;
           
-          // Check if this row contains header-like values
+          // Check if this row contains header-like values - be more specific to avoid false positives
           const hasHeaderValues = rowValues.some(value => {
             if (!value) return false;
             const strValue = String(value).trim().toLowerCase();
+            // Only skip if the entire row looks like headers, not just if it contains one header-like value
             return strValue === 'y/n' || 
                    strValue === 'oem/vendor' || 
                    strValue === 'product name' ||
@@ -106,8 +107,21 @@ class SheetEntryService {
                    strValue === 'vendor contacted';
           });
           
-          if (hasHeaderValues) {
-            console.log(`Skipping row ${index + 1} - appears to be header row`);
+          // More conservative header detection - only skip if multiple header-like values are found
+          const headerLikeCount = rowValues.filter(value => {
+            if (!value) return false;
+            const strValue = String(value).trim().toLowerCase();
+            return strValue === 'y/n' || 
+                   strValue === 'oem/vendor' || 
+                   strValue === 'product name' ||
+                   strValue === 'risk level' ||
+                   strValue === 'cve' ||
+                   strValue === 'source' ||
+                   strValue === 'vendor contacted';
+          }).length;
+          
+          if (headerLikeCount >= 3) { // Only skip if 3 or more header-like values found
+            console.log(`Skipping row ${index + 1} - appears to be header row (${headerLikeCount} header-like values)`);
             continue;
           }
           
@@ -157,7 +171,9 @@ class SheetEntryService {
                 // Only set the value if it's not null after processing
                 if (value !== null) {
                   entry[dbColumn] = value;
-                  if (dbColumn === 'oem_vendor') {
+                  if (dbColumn === 'product_name') {
+                    console.log(`✅ Successfully set product_name to: "${value}"`);
+                  } else if (dbColumn === 'oem_vendor') {
                     console.log(`✅ Successfully set oem_vendor to: "${value}"`);
                   }
                 }
@@ -199,7 +215,9 @@ class SheetEntryService {
                 // Only set the value if it's not null after processing
                 if (value !== null) {
                   entry[dbColumn] = value;
-                  if (dbColumn === 'oem_vendor') {
+                  if (dbColumn === 'product_name') {
+                    console.log(`✅ Successfully set product_name from array to: "${value}"`);
+                  } else if (dbColumn === 'oem_vendor') {
                     console.log(`✅ Successfully set oem_vendor from array to: "${value}"`);
                   }
                 }
@@ -231,6 +249,11 @@ class SheetEntryService {
             entries.push(entry);
           } else {
             console.warn(`Skipping row ${index + 1} - insufficient data`);
+            console.warn(`Row ${index + 1} details:`, {
+              row_data: row,
+              entry_data: entry,
+              headers: processedData.headers
+            });
           }
         } catch (rowError) {
           console.error(`Error processing row ${index + 1}:`, rowError);
@@ -446,7 +469,13 @@ class SheetEntryService {
     return {
       // Basic product information
       'Product Name': 'product_name',
-      'Vendor Name': 'vendor_name',
+      'Product': 'product_name',
+      'Name': 'product_name',
+      'Product/Name': 'product_name',
+      'OEM/Vendor': 'oem_vendor',
+      'Vendor Name': 'oem_vendor',
+      'Vendor': 'oem_vendor',
+      'Manufacturer': 'oem_vendor',
       'Source': 'source',
       
       // Location and deployment
@@ -597,7 +626,7 @@ class SheetEntryService {
           } else {
             // Handle entry-level filters - check if column exists
             const entryLevelColumns = [
-              'product_name', 'location', 'status', 'deployed_in_ke', 'team', 'date', 'notes',
+              'id', 'product_name', 'location', 'status', 'deployed_in_ke', 'team', 'date', 'notes',
               'oem_vendor', 'source', 'risk_level', 'cve', 'vendor_contacted', 
               'compensatory_controls_provided', 'patching', 'current_status', 'priority_level',
               'assigned_team'
@@ -670,6 +699,10 @@ class SheetEntryService {
    */
   static async updateEntry(id, updateData, user = null) {
     try {
+      console.log(`🔄 SheetEntryService.updateEntry called for entry ${id}`);
+      console.log('📝 Update data received:', JSON.stringify(updateData, null, 2));
+      console.log('👤 User:', user ? `${user.email} (${user.role})` : 'No user provided');
+      
       const allowedFields = [
         'product_name', 
         'location', 
@@ -720,22 +753,29 @@ class SheetEntryService {
           }
           
           filteredData[key] = value;
+        } else {
+          console.log(`⚠️  Skipping field '${key}' - not in allowed fields`);
         }
       });
 
       // Add updated timestamp
       filteredData.updated_at = new Date();
+      
+      console.log('🔍 Filtered data for database update:', JSON.stringify(filteredData, null, 2));
 
+      console.log('💾 Executing database update...');
       const [updatedEntry] = await db('sheet_entries')
         .where('id', id)
         .update(filteredData)
         .returning('*');
 
       if (!updatedEntry) {
+        console.log('❌ No entry returned from update - entry might not exist');
         throw new Error('Entry not found or could not be updated');
       }
 
-      console.log(`Updated entry ${id} with data:`, filteredData);
+      console.log(`✅ Updated entry ${id} successfully`);
+      console.log('📄 Updated entry data:', JSON.stringify(updatedEntry, null, 2));
 
       // Broadcast real-time update to admin clients via SSE (replaces traditional notifications)
       let sseUpdateSent = false;

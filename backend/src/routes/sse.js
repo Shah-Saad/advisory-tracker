@@ -35,15 +35,15 @@ router.get('/subscribe', (req, res) => {
       'Access-Control-Allow-Headers': 'Cache-Control'
     });
 
-    const clientId = `user_${user.id}_${Date.now()}`;
+    const clientId = `user_${user.userId}_${Date.now()}`;
     
     // Check if this user already has a connection and close the old one
     const existingConnections = Array.from(sseClients.entries()).filter(([id, client]) => 
-      client.userId === user.id
+      client.userId === user.userId
     );
     
     if (existingConnections.length > 0) {
-      console.log(`🔄 Closing ${existingConnections.length} existing connections for user ${user.id}`);
+      console.log(`🔄 Closing ${existingConnections.length} existing connections for user ${user.userId}`);
       existingConnections.forEach(([existingId, existingClient]) => {
         try {
           existingClient.response.end();
@@ -57,7 +57,7 @@ router.get('/subscribe', (req, res) => {
     // Store the client connection
     sseClients.set(clientId, {
       response: res,
-      userId: user.id,
+      userId: user.userId,
       userRole: user.role,
       teamId: user.team_id,
       connectedAt: new Date()

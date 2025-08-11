@@ -38,8 +38,10 @@ class CISAService {
       });
     }
 
-    // Product from Equipment
+    // Enhanced Product Name Extraction
     let productName = '';
+    
+    // Method 1: Look for Equipment in <li> tags with <strong>Equipment</strong> (original logic)
     $('li').each((_, li) => {
       const html = $(li).html() || '';
       if (!productName && /<strong>\s*Equipment\s*<\/strong>\s*:/i.test(html)) {
@@ -47,6 +49,110 @@ class CISAService {
         if (m) productName = m[1].trim();
       }
     });
+    
+    // Method 2: Look for other product-related patterns in various HTML elements
+    if (!productName) {
+      const productKeywords = ['product', 'equipment', 'system', 'device', 'software', 'hardware', 'platform'];
+      const productPatterns = [
+        /(?:product|equipment|system|device|software|hardware|platform)\s*:?\s*([^.\n\r]+)/i,
+        /(?:product|equipment|system|device|software|hardware|platform)\s+name\s*:?\s*([^.\n\r]+)/i,
+        /(?:product|equipment|system|device|software|hardware|platform)\s+information\s*:?\s*([^.\n\r]+)/i
+      ];
+      
+      $('p, li, div, h1, h2, h3, h4, h5, h6').each((_, element) => {
+        if (productName) return; // Stop if we found a product name
+        
+        const text = $(element).text().trim();
+        
+        // Check for product keywords in the text
+        const hasProductKeyword = productKeywords.some(keyword => 
+          text.toLowerCase().includes(keyword)
+        );
+        
+        if (hasProductKeyword) {
+          // Try to extract product name using patterns
+          for (const pattern of productPatterns) {
+            const match = text.match(pattern);
+            if (match && match[1].trim().length > 2) {
+              const extracted = match[1].trim();
+              // Filter out common non-product text
+              if (!extracted.toLowerCase().includes('advisory') && 
+                  !extracted.toLowerCase().includes('vulnerability') &&
+                  !extracted.toLowerCase().includes('security') &&
+                  extracted.length < 200) { // Reasonable length for product name
+                productName = extracted;
+                break;
+              }
+            }
+          }
+        }
+      });
+    }
+    
+    // Method 3: Look for product information in tables
+    if (!productName) {
+      $('table').each((_, table) => {
+        if (productName) return; // Stop if we found a product name
+        
+        const $table = $(table);
+        const rows = $table.find('tr');
+        
+        // Look for product-related headers
+        rows.each((_, row) => {
+          if (productName) return;
+          
+          const $row = $(row);
+          const cells = $row.find('td, th');
+          
+          cells.each((cellIndex, cell) => {
+            if (productName) return;
+            
+            const cellText = $(cell).text().trim().toLowerCase();
+            if (cellText.includes('product') || cellText.includes('equipment') || 
+                cellText.includes('system') || cellText.includes('device')) {
+              
+              // Look for product name in adjacent cells
+              const nextCell = cells.eq(cellIndex + 1);
+              if (nextCell.length) {
+                const nextCellText = nextCell.text().trim();
+                if (nextCellText.length > 2 && nextCellText.length < 200) {
+                  productName = nextCellText;
+                }
+              }
+            }
+          });
+        });
+      });
+    }
+    
+    // Method 4: Extract from advisory title if it contains product information
+    if (!productName) {
+      const title = $('h1, .page-title, .advisory-title').first().text().trim();
+      if (title) {
+        // Look for product names in title (often in parentheses or after specific patterns)
+        const titlePatterns = [
+          /\(([^)]+)\)/, // Text in parentheses
+          /for\s+([^,\n]+)/i, // "for Product Name"
+          /affecting\s+([^,\n]+)/i, // "affecting Product Name"
+          /in\s+([^,\n]+)/i // "in Product Name"
+        ];
+        
+        for (const pattern of titlePatterns) {
+          const match = title.match(pattern);
+          if (match && match[1].trim().length > 2 && match[1].trim().length < 100) {
+            const extracted = match[1].trim();
+            // Filter out common non-product text
+            if (!extracted.toLowerCase().includes('advisory') && 
+                !extracted.toLowerCase().includes('vulnerability') &&
+                !extracted.toLowerCase().includes('security') &&
+                !extracted.toLowerCase().includes('update')) {
+              productName = extracted;
+              break;
+            }
+          }
+        }
+      }
+    }
 
     // CVEs anywhere on the page
     const cves = new Set();
@@ -79,6 +185,14 @@ class CISAService {
     });
 
     const riskLevel = this.calculateRiskLevel(maxScore);
+    
+    // Log product name extraction results for debugging
+    if (productName) {
+      console.log(`✅ Extracted product name: "${productName}"`);
+    } else {
+      console.log(`⚠️ No product name extracted from advisory page`);
+    }
+    
     return { vendor, productName, cves: Array.from(cves), cvss: maxScore, riskLevel };
   }
 
@@ -347,7 +461,7 @@ class CISAService {
         'CISA',
         a.productName || '',
         a.riskLevel || '',
-        (a.cves && a.cves.length) ? a.cves.join('\n') : '',
+        (a.cves && a.cves.length) ? a.cves.join(', ') : '',
         'N',
         '',
         'N',
@@ -407,13 +521,8 @@ class CISAService {
         existing.l = { Target: advisories[i].link || '', Tooltip: advisories[i].title || 'View advisory' };
         existing.v = 'CISA';
         worksheet[cellAddr] = existing;
-
-        // Optionally place CVE if present in title (best-effort extraction)
-        const cveMatch = advisories[i].title && advisories[i].title.match(/CVE-\d{4}-\d{4,7}/gi);
-        if (cveMatch && cveMatch.length > 0) {
-          const cveCell = XLSX.utils.encode_cell({ r: rowIndex, c: 4 });
-          worksheet[cveCell] = { t: 's', v: cveMatch.join('\n') };
-        }
+        // Note: CVEs are already included in the data rows from fetchAdvisoryDetails
+        // No need to extract from title as we have proper CVE extraction
       }
 
       // Sheet name
@@ -461,42 +570,29 @@ class CISAService {
   }
 
   /**
-   * Main method to scrape and generate Excel file
-   * @param {number} month - Month (1-12)
+   * Generate a monthly CISA advisory report
+   * @param {number} month - Month number (1-12)
    * @param {number} year - Year
-   * @returns {Object} Result object with buffer and filename
+   * @returns {object} Object containing buffer, filename, and count
    */
   async generateMonthlyReport(month, year) {
     try {
-      // Validate inputs
-      if (!month || month < 1 || month > 12) {
-        throw new Error('Invalid month. Please provide a month between 1 and 12.');
-      }
+      console.log(`📊 Generating CISA advisory report for ${this.getMonthName(month)} ${year}`);
       
-      if (!year || year < 2020 || year > new Date().getFullYear() + 1) {
-        throw new Error('Invalid year. Please provide a valid year.');
-      }
-      
-      console.log(`🚀 Starting CISA advisory report generation for ${this.getMonthName(month)} ${year}`);
-      
-      // Scrape advisories
       const advisories = await this.scrapeAdvisories(month, year);
       
       if (advisories.length === 0) {
-        console.log(`⚠️ No advisories found for ${this.getMonthName(month)} ${year}`);
+        throw new Error(`No advisories found for ${this.getMonthName(month)} ${year}`);
       }
       
-      // Generate Excel file
       const buffer = await this.generateExcelFile(advisories, month, year);
       const filename = this.generateFilename(month, year);
       
+      console.log(`✅ Generated report: ${filename} (${advisories.length} advisories)`);
       return {
         buffer,
         filename,
-        count: advisories.length,
-        month: this.getMonthName(month),
-        year,
-        advisories
+        count: advisories.length
       };
       
     } catch (error) {

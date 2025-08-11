@@ -116,3 +116,84 @@
 .team-sheet-switcher .bg-secondary {
   background-color: #6c757d !important;
 }
+
+/* Live View Section Styles */
+.live-view-section {
+  border-top: 2px solid #e9ecef;
+  padding-top: 20px;
+  margin-top: 20px;
+}
+
+.live-view-section .card {
+  border: 1px solid #dee2e6;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  transition: all 0.3s ease;
+}
+
+.live-view-section .card:hover {
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+}
+
+.live-view-section .progress {
+  background-color: #e9ecef;
+  border-radius: 10px;
+}
+
+.live-view-section .progress-bar {
+  border-radius: 10px;
+  transition: width 0.6s ease;
+}
+
+.live-view-section .form-check-input:checked {
+  background-color: #0d6efd;
+  border-color: #0d6efd;
+}
+
+.live-view-section .text-success {
+  color: #198754 !important;
+}
+
+.live-view-section .text-warning {
+  color: #fd7e14 !important;
+}
+
+.live-view-section .text-info {
+  color: #0dcaf0 !important;
+}
+
+.live-view-section .text-primary {
+  color: #0d6efd !important;
+}
+
+.live-view-section .text-secondary {
+  color: #6c757d !important;
+}
+
+.live-view-section .bg-light {
+  background-color: #f8f9fa !important;
+}
+
+.live-view-section .badge-info {
+  background-color: #0dcaf0 !important;
+  color: white !important;
+}
+
+.live-view-section .badge-warning {
+  background-color: #fd7e14 !important;
+  color: white !important;
+}
+
+.live-view-section .badge-success {
+  background-color: #198754 !important;
+  color: white !important;
+}
+
+.live-view-section .badge-danger {
+  background-color: #dc3545 !important;
+  color: white !important;
+}
+
+.live-view-section .badge-secondary {
+  background-color: #6c757d !important;
+  color: white !important;
+}

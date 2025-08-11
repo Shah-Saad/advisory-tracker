@@ -236,32 +236,61 @@ router.put('/:id', auth, async (req, res) => {
         const { id } = req.params;
         const updateData = req.body;
         
+        console.log(`🔄 PUT /api/sheet-entries/${id} called by user ${req.user.email} (${req.user.role})`);
+        console.log('📝 Update data:', JSON.stringify(updateData, null, 2));
+        
         // Validate that the entry exists
-        const existingEntries = await SheetEntryService.filterEntries({ id });
+        console.log('🔍 Checking if entry exists...');
+        let existingEntries = await SheetEntryService.filterEntries({ id });
+        let actualEntryId = id;
+        
         if (existingEntries.length === 0) {
+            // Entry not found in sheet_entries, check if it's a sheet_responses.id
+            console.log('🔍 Entry not found in sheet_entries, checking if it\'s a sheet_responses.id...');
+            const sheetResponse = await require('../config/db')('sheet_responses')
+                .where('id', id)
+                .first();
+                
+            if (sheetResponse) {
+                console.log('✅ Found sheet_response with id:', id, '-> original_entry_id:', sheetResponse.original_entry_id);
+                actualEntryId = sheetResponse.original_entry_id;
+                existingEntries = await SheetEntryService.filterEntries({ id: actualEntryId });
+            }
+        }
+        
+        if (existingEntries.length === 0) {
+            console.log('❌ Entry not found in either table');
             return res.status(404).json({ message: 'Sheet entry not found' });
         }
         
         const existingEntry = existingEntries[0];
+        console.log('✅ Entry found:', existingEntry.id, existingEntry.product_name);
         
         // Team isolation: Check if user has access to this entry
         // Only admins or users from the correct team can update entries
         if (req.user.role !== 'admin') {
+            console.log('🔐 Checking team access for non-admin user...');
             // Get team assignment for this sheet
-            const teamAssignment = await require('../../config/db')('team_sheets')
+            const teamAssignment = await require('../config/db')('team_sheets')
                 .where('sheet_id', existingEntry.sheet_id)
                 .where('team_id', req.user.team_id)
                 .first();
             
             if (!teamAssignment) {
+                console.log('❌ Access denied - entry not assigned to user team');
                 return res.status(403).json({ 
                     message: 'Access denied. This entry is not assigned to your team.' 
                 });
             }
+            console.log('✅ Team access verified');
+        } else {
+            console.log('✅ Admin user - full access');
         }
         
         // Update the entry with user information for notifications
-        const updatedEntry = await SheetEntryService.updateEntry(id, updateData, req.user);
+        console.log('💾 Calling SheetEntryService.updateEntry...');
+        const updatedEntry = await SheetEntryService.updateEntry(actualEntryId, updateData, req.user);
+        console.log('✅ Entry updated successfully:', updatedEntry.id);
         
         // Broadcast real-time update to all connected admin clients
         try {
@@ -288,7 +317,8 @@ router.put('/:id', auth, async (req, res) => {
             entry: updatedEntry
         });
     } catch (error) {
-        console.error('Error updating entry:', error);
+        console.error('❌ Error updating entry:', error);
+        console.error('Stack trace:', error.stack);
         res.status(500).json({ 
             message: 'Failed to update entry', 
             error: error.message 

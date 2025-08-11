@@ -25,7 +25,7 @@ const AdminTeamSheetView = () => {
       }
       
       // Fetch detailed team sheet data
-      const detailedData = await sheetService.getTeamSheetData(sheetId, teamKey);
+      const detailedData = await sheetService.getAdminTeamSheetData(sheetId, teamKey);
       
       setTeamData({
         ...detailedData,

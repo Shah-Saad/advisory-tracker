@@ -93,6 +93,16 @@ const sheetService = {
     }
   },
 
+  // Update team response
+  updateTeamResponse: async (responseId, data) => {
+    try {
+      const response = await apiClient.put(`/team-responses/responses/${responseId}/status`, data);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to update team response' };
+    }
+  },
+
   // Delete entry
   deleteEntry: async (id) => {
     try {
@@ -153,6 +163,16 @@ const sheetService = {
       return response.data;
     } catch (error) {
       throw error.response?.data || { message: 'Failed to fetch sheet entries' };
+    }
+  },
+
+  // Get team-specific sheet data (for team members using numeric teamId)
+  getTeamSheetData: async (sheetId, teamId) => {
+    try {
+      const response = await apiClient.get(`/sheets/${sheetId}/team-id/${teamId}`);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to fetch team sheet data' };
     }
   },
 
@@ -236,8 +256,8 @@ const sheetService = {
     }
   },
 
-  // Admin-only: Get detailed team sheet data
-  getTeamSheetData: async (sheetId, teamKey) => {
+  // Admin-only: Get detailed team sheet data (using teamKey string)
+  getAdminTeamSheetData: async (sheetId, teamKey) => {
     try {
       const response = await apiClient.get(`/sheets/${sheetId}/team-data/${teamKey}`);
       return response.data;

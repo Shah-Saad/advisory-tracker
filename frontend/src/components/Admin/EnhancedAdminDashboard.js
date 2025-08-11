@@ -36,6 +36,7 @@ const EnhancedAdminDashboard = ({ user }) => {
   const [error, setError] = useState('');
   const [showCISAGenerator, setShowCISAGenerator] = useState(false);
 
+
   useEffect(() => {
     loadDashboardData();
   }, []);
@@ -516,6 +517,7 @@ const EnhancedAdminDashboard = ({ user }) => {
             <i className="fas fa-chart-bar"></i>
             <span>Team Reports</span>
           </Link>
+
         </div>
       </div>
 
@@ -538,6 +540,8 @@ const EnhancedAdminDashboard = ({ user }) => {
           <CISAReportGenerator />
         </div>
       )}
+
+
     </div>
   );
 };

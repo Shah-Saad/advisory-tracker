@@ -37,7 +37,7 @@ class SheetResponse {
       .select(
         'sr.*',
         'se.product_name',
-        'se.vendor_name',
+        'se.oem_vendor as vendor_name',
         'se.cve',
         'se.source',
         'se.risk_level as original_risk_level',
@@ -53,15 +53,9 @@ class SheetResponse {
     const {
       team_sheet_id,
       original_entry_id,
-      product_name,
-      vendor_name,
-      site,
       status,
       current_status,
       deployed_in_ke,
-      risk_level,
-      cve,
-      date,
       vendor_contact_date,
       patching_est_release_date,
       implementation_date,
@@ -76,23 +70,20 @@ class SheetResponse {
 
     const result = await db.query(`
       INSERT INTO sheet_responses (
-              team_sheet_id, original_entry_id, product_name, vendor_name,
-      site, status, current_status, deployed_in_ke, risk_level, cve,
-      date, vendor_contact_date, patching_est_release_date, implementation_date,
-      estimated_completion_date, vendor_contacted,
-        compensatory_controls_provided, compensatory_controls_details,
-        estimated_time, comments, updated_by, created_at, updated_at
+        team_sheet_id, original_entry_id, status, current_status, deployed_in_ke,
+        vendor_contact_date, patching_est_release_date, implementation_date,
+        estimated_completion_date, vendor_contacted, compensatory_controls_provided,
+        compensatory_controls_details, estimated_time, comments, updated_by,
+        created_at, updated_at
       ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
-        $17, $18, $19, $20, $21, $22, $23, NOW(), NOW()
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
+        NOW(), NOW()
       ) RETURNING *
     `, [
-      team_sheet_id, original_entry_id, product_name, vendor_name,
-      site, status, current_status, deployed_in_ke, risk_level, cve,
-      date, vendor_contact_date, patching_est_release_date, implementation_date,
-      estimated_completion_date, vendor_contacted,
-      compensatory_controls_provided, compensatory_controls_details,
-      estimated_time, comments, updated_by
+      team_sheet_id, original_entry_id, status, current_status, deployed_in_ke,
+      vendor_contact_date, patching_est_release_date, implementation_date,
+      estimated_completion_date, vendor_contacted, compensatory_controls_provided,
+      compensatory_controls_details, estimated_time, comments, updated_by
     ]);
 
     return result.rows[0];
@@ -145,29 +136,21 @@ class SheetResponse {
       .where('sheet_id', sheetId)
       .orderBy('id');
 
-    // Create initial responses for each entry (copying original data)
+    // Create initial responses for each entry (only team-modifiable fields)
     const responses = [];
     for (const entry of originalEntries) {
       const responseData = {
         team_sheet_id: teamSheetId,
         original_entry_id: entry.id,
-        product_name: entry.product_name,
-        vendor_name: entry.vendor_name,
-        oem_vendor: entry.oem_vendor,
-        site: entry.site,
-        status: entry.status,
-        current_status: entry.current_status,
-        deployed_in_ke: entry.deployed_in_ke,
-        risk_level: entry.risk_level,
-        cve: entry.cve,
-        date: entry.date,
+        status: entry.status || 'New',
+        current_status: entry.current_status || 'New',
+        deployed_in_ke: entry.deployed_in_ke || 'Unknown',
         vendor_contact_date: entry.vendor_contact_date,
         patching_est_release_date: entry.patching_est_release_date,
         implementation_date: entry.implementation_date,
         estimated_completion_date: entry.estimated_completion_date,
-        resolution_date: entry.resolution_date,
-        vendor_contacted: entry.vendor_contacted,
-        compensatory_controls_provided: entry.compensatory_controls_provided,
+        vendor_contacted: entry.vendor_contacted || 'N',
+        compensatory_controls_provided: entry.compensatory_controls_provided || 'N',
         compensatory_controls_details: entry.compensatory_controls_details,
         estimated_time: entry.estimated_time,
         comments: entry.comments,

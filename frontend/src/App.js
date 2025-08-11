@@ -16,19 +16,17 @@ import Filters from './components/Filters/Filters';
 import AdminUserManagement from './components/Admin/AdminUserManagement';
 import TeamSheetSwitcher from './components/Admin/TeamSheetSwitcher';
 import AdminTeamSheetView from './components/Admin/AdminTeamSheetView';
+
 import NotificationPanel from './components/Admin/NotificationPanel';
 import TeamSheets from './components/TeamSheets/TeamSheets';
 import TeamSheetEditor from './components/TeamSheets/TeamSheetEditor';
-import SheetEditorWithLocking from './components/TeamSheets/SheetEditorWithLocking';
+
 import authService from './services/authService';
 
 import './App.css';
 
 // Redirect component for non-admin users trying to access regular edit
-const RedirectToEditWithLocking = () => {
-  const { sheetId } = useParams();
-  return <Navigate to={`/team-sheets/${sheetId}/edit-with-locking`} replace />;
-};
+
 
 function App() {
   const [user, setUser] = useState(null);
@@ -215,26 +213,9 @@ function App() {
                   {user && user.role !== 'admin' && (
                     <Route path="/my-sheets" element={<TeamSheets user={user} />} />
                   )}
-                  {/* Team members can only access edit-with-locking route */}
-                  {user && user.role !== 'admin' && (
-                    <Route path="/team-sheets/:sheetId/edit-with-locking" element={<SheetEditorWithLocking user={user} />} />
-                  )}
-                  
-                  {/* Redirect non-admin users from regular edit to edit-with-locking */}
-                  {user && user.role !== 'admin' && (
-                    <Route 
-                      path="/team-sheets/:sheetId/edit" 
-                      element={<RedirectToEditWithLocking />} 
-                    />
-                  )}
-                  
-                  {/* Admin can access both edit routes */}
-                  {user && user.role === 'admin' && (
-                    <Route path="/team-sheets/:sheetId/edit" element={<TeamSheetEditor />} />
-                  )}
-                  {user && user.role === 'admin' && (
-                    <Route path="/team-sheets/:sheetId/edit-with-locking" element={<SheetEditorWithLocking user={user} />} />
-                  )}
+                  {/* Team sheets routes - accessible to all users */}
+                  <Route path="/team-sheets/:sheetId" element={<TeamSheets user={user} />} />
+                  <Route path="/team-sheets/:sheetId/edit" element={<TeamSheetEditor user={user} />} />
                   
                   {/* Filters accessible to all */}
                   <Route path="/filters" element={<Filters />} />
@@ -249,6 +230,7 @@ function App() {
                   {user && user.role === 'admin' && (
                     <Route path="/admin/team-sheets/:sheetId/:teamKey" element={<AdminTeamSheetView />} />
                   )}
+
                   
                   {/* Default redirect based on role */}
                   <Route path="/" element={
