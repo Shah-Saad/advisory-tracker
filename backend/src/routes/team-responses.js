@@ -452,7 +452,11 @@ router.put('/admin/sheets/:sheetId/teams/:teamId/unlock', auth, async (req, res)
     const userId = req.user.id;
 
     // Check if user is admin
-    const user = await db('users').where('id', userId).first();
+    const user = await db('users')
+      .join('roles', 'users.role_id', 'roles.id')
+      .where('users.id', userId)
+      .select('users.*', 'roles.name as role')
+      .first();
     if (!user || user.role !== 'admin') {
       return res.status(403).json({ error: 'Admin access required' });
     }

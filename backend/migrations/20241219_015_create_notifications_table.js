@@ -6,6 +6,7 @@ exports.up = function(knex) {
     table.string('type').notNullable(); // 'entry_update', 'welcome', etc.
     table.string('title').notNullable();
     table.text('message');
+    table.jsonb('data'); // Add data column for additional notification data
     table.integer('entry_id').references('id').inTable('sheet_entries').onDelete('CASCADE');
     table.boolean('is_read').defaultTo(false);
     table.timestamp('created_at').defaultTo(knex.fn.now());

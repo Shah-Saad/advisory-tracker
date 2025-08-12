@@ -797,7 +797,14 @@ class SheetService {
       throw new Error('Team not found');
     }
 
-    // Get all original entries for this sheet
+    // Get team-specific entries for this sheet
+    const teamEntries = await db('sheet_entries')
+      .where('sheet_id', sheetId)
+      .where('assigned_team', teamId)
+      .select('*')
+      .orderBy('id');
+
+    // Get all original entries for this sheet (fallback)
     const originalEntries = await db('sheet_entries')
       .where('sheet_id', sheetId)
       .select('*')
@@ -890,8 +897,10 @@ class SheetService {
       team_name: team.name,
       assigned_at: assignment.assigned_at,
       submitted_at: assignment.completed_at,
+      entries: teamEntries,
       responses: teamResponses,
       response_count: teamResponses.length,
+      entry_count: teamEntries.length,
       completion_percentage: assignment.completion_percentage || 0,
       data_source: 'team_responses',
       display_mode: 'team_specific'

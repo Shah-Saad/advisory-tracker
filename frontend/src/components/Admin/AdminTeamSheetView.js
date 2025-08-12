@@ -32,7 +32,7 @@ const AdminTeamSheetView = () => {
         setRefreshing(true);
         setLoading(true);
       }
-      setError('');
+        setError('');
       
       console.log('🔄 Loading team sheet data for:', { sheetId, teamKey });
       const data = await sheetService.getAdminTeamSheetData(sheetId, teamKey);
@@ -62,7 +62,7 @@ const AdminTeamSheetView = () => {
     // Reset the loaded flag when sheetId or teamKey changes
     hasLoadedRef.current = false;
     if (sheetId && teamKey) {
-      loadTeamSheetData();
+    loadTeamSheetData();
     }
   }, [sheetId, teamKey, loadTeamSheetData]);
 
@@ -486,73 +486,73 @@ const AdminTeamSheetView = () => {
                     </div>
                   </div>
 
-                  <div className="table-responsive">
-                    <table className="table table-hover">
-                      <thead>
-                        <tr>
-                          <th>Product Name</th>
-                          <th>Vendor</th>
-                          <th>Source</th>
-                          <th>Risk Level</th>
-                          <th>CVE</th>
-                          <th>Deployed in KE?</th>
-                          <th>Location/Site</th>
-                          <th>Status</th>
-                          <th>Vendor Contacted</th>
-                          <th>Patching</th>
-                          <th>Compensatory Controls</th>
-                          <th>Comments</th>
-                          <th>Updated</th>
-                        </tr>
-                        <tr>
-                          <th></th>
-                          <th></th>
-                          <th></th>
-                          <th></th>
-                          <th></th>
-                          <th></th>
-                          <th></th>
-                          <th></th>
-                          <th></th>
-                          <th style={{textAlign: 'center'}}>
-                            <div className="d-flex justify-content-around">
-                              <small>Est. Release Date</small>
-                              <small>Implementation Date</small>
-                            </div>
-                          </th>
-                          <th></th>
-                          <th></th>
-                          <th></th>
-                        </tr>
-                      </thead>
-                      <tbody>
+                <div className="table-responsive">
+                  <table className="table table-hover">
+                    <thead>
+                      <tr>
+                        <th>Product Name</th>
+                        <th>Vendor</th>
+                        <th>Source</th>
+                        <th>Risk Level</th>
+                        <th>CVE</th>
+                        <th>Deployed in KE?</th>
+                        <th>Location/Site</th>
+                        <th>Status</th>
+                        <th>Vendor Contacted</th>
+                        <th>Patching</th>
+                        <th>Compensatory Controls</th>
+                        <th>Comments</th>
+                        <th>Updated</th>
+                      </tr>
+                      <tr>
+                        <th></th>
+                        <th></th>
+                        <th></th>
+                        <th></th>
+                        <th></th>
+                        <th></th>
+                        <th></th>
+                        <th></th>
+                        <th></th>
+                        <th style={{textAlign: 'center'}}>
+                          <div className="d-flex justify-content-around">
+                            <small>Est. Release Date</small>
+                            <small>Implementation Date</small>
+                          </div>
+                        </th>
+                        <th></th>
+                        <th></th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody>
                         {filteredResponses.map((response, index) => (
-                          <tr key={response.id || index} className={`${getEntryStatusColor(response)} ${isRecentlyUpdated(response.updated_at) ? 'border-primary border-2' : ''}`}>
-                            <td>
-                              <small>{response.product_name || 'N/A'}</small>
-                              {isRecentlyUpdated(response.updated_at) && (
-                                <span className="badge bg-primary ms-1" style={{fontSize: '10px'}}>
-                                  <i className="fas fa-clock"></i> Updated
-                                </span>
-                              )}
-                            </td>
-                            <td>
-                              <small>{response.vendor_name || response.oem_vendor || 'N/A'}</small>
-                            </td>
-                            <td>
-                              {response.source ? (
-                                <a href={response.source} target="_blank" rel="noopener noreferrer" className="text-primary">
-                                  <small>{response.source.includes('cisa.gov') ? 'CISA Advisory' : 'Source Link'}</small>
-                                </a>
-                              ) : (
-                                <small className="text-muted">N/A</small>
-                              )}
-                            </td>
-                            <td>
-                              <span className={`badge ${
-                                response.risk_level === 'Critical' ? 'bg-danger' :
-                                response.risk_level === 'High' ? 'bg-warning text-dark' :
-                                response.risk_level === 'Medium' ? 'bg-info text-dark' :
+                        <tr key={response.id || index} className={`${getEntryStatusColor(response)} ${isRecentlyUpdated(response.updated_at) ? 'border-primary border-2' : ''}`}>
+                          <td>
+                            <small>{response.product_name || 'N/A'}</small>
+                            {isRecentlyUpdated(response.updated_at) && (
+                              <span className="badge bg-primary ms-1" style={{fontSize: '10px'}}>
+                                <i className="fas fa-clock"></i> Updated
+                              </span>
+                            )}
+                          </td>
+                          <td>
+                            <small>{response.vendor_name || response.oem_vendor || 'N/A'}</small>
+                          </td>
+                          <td>
+                            {response.source ? (
+                              <a href={response.source} target="_blank" rel="noopener noreferrer" className="text-primary">
+                                <small>{response.source.includes('cisa.gov') ? 'CISA Advisory' : 'Source Link'}</small>
+                              </a>
+                            ) : (
+                              <small className="text-muted">N/A</small>
+                            )}
+                          </td>
+                          <td>
+                            <span className={`badge ${
+                              response.risk_level === 'Critical' ? 'bg-danger' :
+                              response.risk_level === 'High' ? 'bg-warning text-dark' :
+                              response.risk_level === 'Medium' ? 'bg-info text-dark' :
                                 response.risk_level === 'Low' ? 'bg-success' : 
                                 response.original_risk_level === 'Critical' ? 'bg-danger' :
                                 response.original_risk_level === 'High' ? 'bg-warning text-dark' :
@@ -560,78 +560,78 @@ const AdminTeamSheetView = () => {
                                 response.original_risk_level === 'Low' ? 'bg-success' : 'bg-secondary'
                               }`}>
                                 {response.risk_level || response.original_risk_level || 'N/A'}
-                              </span>
-                            </td>
-                            <td>
-                              <small>{response.cve || 'N/A'}</small>
-                            </td>
-                            <td>
-                              <span className={`badge ${response.deployed_in_ke === 'Y' ? 'bg-success' : 'bg-secondary'}`}>
-                                {response.deployed_in_ke === 'Y' ? 'Yes' : 'No'}
-                              </span>
-                            </td>
-                            <td>
-                              <small>{response.deployed_in_ke === 'Y' ? (response.site || 'N/A') : 'N/A'}</small>
-                            </td>
-                            <td>
-                              <small>{response.deployed_in_ke === 'Y' ? (response.current_status || 'N/A') : 'N/A'}</small>
-                            </td>
-                            <td>
-                              <small>{response.deployed_in_ke === 'Y' ? (response.vendor_contacted || 'N/A') : 'N/A'}</small>
-                              {response.deployed_in_ke === 'Y' && response.vendor_contacted === 'Y' && response.vendor_contact_date && (
-                                <div><small className="text-muted">Contact Date: {formatDate(response.vendor_contact_date)}</small></div>
-                              )}
-                            </td>
-                            <td>
-                              <div className="d-flex gap-1">
-                                <div className="flex-fill">
-                                  {response.deployed_in_ke === 'Y' && response.patching_est_release_date ? (
-                                    <small>{formatDate(response.patching_est_release_date)}</small>
-                                  ) : (
-                                    <small className="text-muted">N/A</small>
-                                  )}
-                                </div>
-                                <div className="flex-fill">
-                                  {response.deployed_in_ke === 'Y' && response.implementation_date ? (
-                                    <small>{formatDate(response.implementation_date)}</small>
-                                  ) : (
-                                    <small className="text-muted">N/A</small>
-                                  )}
-                                </div>
+                            </span>
+                          </td>
+                          <td>
+                            <small>{response.cve || 'N/A'}</small>
+                          </td>
+                          <td>
+                            <span className={`badge ${response.deployed_in_ke === 'Y' ? 'bg-success' : 'bg-secondary'}`}>
+                              {response.deployed_in_ke === 'Y' ? 'Yes' : 'No'}
+                            </span>
+                          </td>
+                          <td>
+                            <small>{response.deployed_in_ke === 'Y' ? (response.site || 'N/A') : 'N/A'}</small>
+                          </td>
+                          <td>
+                            <small>{response.deployed_in_ke === 'Y' ? (response.current_status || 'N/A') : 'N/A'}</small>
+                          </td>
+                          <td>
+                            <small>{response.deployed_in_ke === 'Y' ? (response.vendor_contacted || 'N/A') : 'N/A'}</small>
+                            {response.deployed_in_ke === 'Y' && response.vendor_contacted === 'Y' && response.vendor_contact_date && (
+                              <div><small className="text-muted">Contact Date: {formatDate(response.vendor_contact_date)}</small></div>
+                            )}
+                          </td>
+                          <td>
+                            <div className="d-flex gap-1">
+                              <div className="flex-fill">
+                                {response.deployed_in_ke === 'Y' && response.patching_est_release_date ? (
+                                  <small>{formatDate(response.patching_est_release_date)}</small>
+                                ) : (
+                                  <small className="text-muted">N/A</small>
+                                )}
                               </div>
-                            </td>
-                            <td>
-                              <small>{response.deployed_in_ke === 'Y' ? (response.compensatory_controls_provided || 'N/A') : 'N/A'}</small>
-                              {response.deployed_in_ke === 'Y' && response.compensatory_controls_provided === 'Y' && response.compensatory_controls_details && (
-                                <div><small className="text-muted">{response.compensatory_controls_details}</small></div>
-                              )}
-                            </td>
-                            <td>
-                              {response.comments ? (
-                                <span title={response.comments}>
-                                  {response.comments.length > 50 ? 
-                                    response.comments.substring(0, 50) + '...' : 
-                                    response.comments}
-                                </span>
-                              ) : (
-                                <span className="text-muted">No comments</span>
-                              )}
-                            </td>
-                            <td>
-                              <small>{formatDate(response.updated_at) || 'N/A'}</small>
-                              {isRecentlyUpdated(response.updated_at) && (
-                                <div>
-                                  <small className="text-primary">
-                                    <i className="fas fa-pulse"></i> {formatTimeAgo(new Date(response.updated_at))}
-                                  </small>
-                                </div>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                              <div className="flex-fill">
+                                {response.deployed_in_ke === 'Y' && response.implementation_date ? (
+                                  <small>{formatDate(response.implementation_date)}</small>
+                                ) : (
+                                  <small className="text-muted">N/A</small>
+                                )}
+                              </div>
+                            </div>
+                          </td>
+                          <td>
+                            <small>{response.deployed_in_ke === 'Y' ? (response.compensatory_controls_provided || 'N/A') : 'N/A'}</small>
+                            {response.deployed_in_ke === 'Y' && response.compensatory_controls_provided === 'Y' && response.compensatory_controls_details && (
+                              <div><small className="text-muted">{response.compensatory_controls_details}</small></div>
+                            )}
+                          </td>
+                          <td>
+                            {response.comments ? (
+                              <span title={response.comments}>
+                                {response.comments.length > 50 ? 
+                                  response.comments.substring(0, 50) + '...' : 
+                                  response.comments}
+                              </span>
+                            ) : (
+                              <span className="text-muted">No comments</span>
+                            )}
+                          </td>
+                          <td>
+                            <small>{formatDate(response.updated_at) || 'N/A'}</small>
+                            {isRecentlyUpdated(response.updated_at) && (
+                              <div>
+                                <small className="text-primary">
+                                  <i className="fas fa-pulse"></i> {formatTimeAgo(new Date(response.updated_at))}
+                                </small>
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
                 </>
               ) : (
                 <div className="text-center py-4">
