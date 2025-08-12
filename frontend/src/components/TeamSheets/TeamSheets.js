@@ -185,18 +185,10 @@ const TeamSheets = ({ user }) => {
                     </div>
                     <div className="card-footer">
                       <div className="d-flex gap-2">
-                        <Link 
-                          to={`/entries?sheet=${sheet.id}`}
-                          className="btn btn-outline-primary btn-sm flex-fill"
-                        >
-                          <i className="fas fa-eye me-1"></i>
-                          View Entries
-                        </Link>
-                        
                         {(sheet.assignment_status === 'assigned' || sheet.assignment_status === 'in_progress') && (
                           <Link 
                             to={`/team-sheets/${sheet.id}/edit`}
-                            className="btn btn-primary btn-sm"
+                            className="btn btn-primary btn-sm flex-fill"
                           >
                             <i className="fas fa-edit me-1"></i>
                             Select & Edit

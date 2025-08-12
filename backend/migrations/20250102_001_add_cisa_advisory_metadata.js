@@ -30,3 +30,4 @@ exports.down = function(knex) {
     table.dropColumn('advisory_type');
   });
 };
+

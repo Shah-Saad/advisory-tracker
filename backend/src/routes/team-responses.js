@@ -69,7 +69,7 @@ router.get('/sheets/:sheetId/entries', auth, async (req, res) => {
 router.put('/responses/:responseId/status', auth, async (req, res) => {
   try {
     const { responseId } = req.params;
-    const { status, comments, estimated_completion_date } = req.body;
+    const updateData = req.body; // Accept all form data, not just specific fields
     const userId = req.user.id;
     const teamId = req.user.team_id;
 
@@ -89,44 +89,218 @@ router.put('/responses/:responseId/status', auth, async (req, res) => {
       return res.status(404).json({ error: 'Response not found or access denied' });
     }
 
+    // Filter and validate the update data - only include columns that actually exist
+    const allowedFields = [
+      'status', 'current_status', 'deployed_in_ke', 'vendor_contact_date',
+      'patching_est_release_date', 'implementation_date', 'estimated_completion_date',
+      'vendor_contacted', 'compensatory_controls_provided', 'compensatory_controls_details',
+      'estimated_time', 'comments', 'site'
+    ];
+
+    const filteredUpdateData = {};
+    Object.keys(updateData).forEach(key => {
+      if (allowedFields.includes(key) && updateData[key] !== undefined) {
+        // Convert empty strings to null for database compatibility
+        filteredUpdateData[key] = updateData[key] === "" ? null : updateData[key];
+      }
+    });
+
+    // Add updated_by and timestamp
+    filteredUpdateData.updated_by = userId;
+    filteredUpdateData.updated_at = db.fn.now();
+
     // Update the response
-    const updatedResponse = await SheetResponse.update(responseId, {
-        status: status || response.status,
-        comments: comments !== undefined ? comments : response.comments,
-        estimated_completion_date: estimated_completion_date || response.estimated_completion_date
-      });
+    const updatedResponse = await SheetResponse.update(responseId, filteredUpdateData);
 
-    // Create notification for admins if status changed to significant states
-    if (status && ['in_progress', 'pending_patch', 'completed'].includes(status.toLowerCase())) {
-      try {
-        const responseWithDetails = await SheetResponse.query()
-          .findById(responseId)
-          .withGraphFetched('[originalEntry, sheet, team]');
+    // Create notification for admins about any update activity
+    try {
+      const responseWithDetails = await db('sheet_responses as sr')
+        .join('sheet_entries as se', 'sr.original_entry_id', 'se.id')
+        .join('team_sheets as ts', 'sr.team_sheet_id', 'ts.id')
+        .join('teams as t', 'ts.team_id', 't.id')
+        .join('sheets as s', 'ts.sheet_id', 's.id')
+        .join('users as u', 'u.id', userId)
+        .where('sr.id', responseId)
+        .select(
+          'se.product_name',
+          't.name as team_name',
+          's.title as sheet_title',
+          'u.username as updated_by_name'
+        )
+        .first();
 
+      if (responseWithDetails) {
+        // Create notification for any update
         await NotificationService.createNotification({
-          title: `Team Response Updated: ${responseWithDetails.originalEntry?.product_name || 'Entry'}`,
-          message: `Team "${responseWithDetails.team?.name}" updated entry status to "${status}" for sheet "${responseWithDetails.sheet?.name}"`,
-          type: 'team_response_update',
+          user_id: userId,
+          type: 'team_response_updated',
+          title: 'Team Response Updated',
+          message: `${responseWithDetails.updated_by_name} from ${responseWithDetails.team_name} updated "${responseWithDetails.product_name}" in sheet "${responseWithDetails.sheet_title}"`,
           data: {
             response_id: responseId,
-            team_id: user.team.id,
-            team_name: user.team.name,
+            team_id: teamId,
+            team_name: responseWithDetails.team_name,
             sheet_id: response.sheet_id,
-            status: status,
-            product_name: responseWithDetails.originalEntry?.product_name,
-            cve: responseWithDetails.originalEntry?.cve
+            product_name: responseWithDetails.product_name,
+            action: 'response_updated',
+            updated_fields: Object.keys(filteredUpdateData).filter(key => !['updated_by', 'updated_at'].includes(key))
           }
         });
-      } catch (notificationError) {
-        console.error('Failed to create notification:', notificationError);
-        // Don't fail the request if notification fails
+
+        // Create special notification for significant status changes
+        if (updateData.status && ['in_progress', 'pending_patch', 'completed'].includes(updateData.status.toLowerCase())) {
+          await NotificationService.createNotification({
+            user_id: userId,
+            type: 'team_status_changed',
+            title: `Status Changed to ${updateData.status}`,
+            message: `${responseWithDetails.updated_by_name} from ${responseWithDetails.team_name} changed status to "${updateData.status}" for "${responseWithDetails.product_name}"`,
+            data: {
+              response_id: responseId,
+              team_id: teamId,
+              team_name: responseWithDetails.team_name,
+              sheet_id: response.sheet_id,
+              product_name: responseWithDetails.product_name,
+              action: 'status_changed',
+              new_status: updateData.status
+            }
+          });
+        }
       }
+    } catch (notificationError) {
+      console.error('Failed to create update notification:', notificationError);
+      // Don't fail the request if notification fails
     }
 
     res.json(updatedResponse);
   } catch (error) {
     console.error('Error updating response status:', error);
     res.status(500).json({ error: 'Failed to update response status' });
+  }
+});
+
+// Save draft - accepts all form fields
+router.put('/responses/:responseId/draft', auth, async (req, res) => {
+  try {
+    console.log('🔄 Draft save request received:', {
+      responseId: req.params.responseId,
+      body: req.body,
+      userId: req.user.id,
+      teamId: req.user.team_id
+    });
+
+    const { responseId } = req.params;
+    const updateData = req.body;
+    const userId = req.user.id;
+    const teamId = req.user.team_id;
+
+    if (!teamId) {
+      console.log('❌ No team ID found for user');
+      return res.status(400).json({ error: 'User is not assigned to a team' });
+    }
+
+    // Verify the response belongs to the user's team
+    const response = await db('sheet_responses')
+      .join('team_sheets', 'sheet_responses.team_sheet_id', 'team_sheets.id')
+      .where('sheet_responses.id', responseId)
+      .andWhere('team_sheets.team_id', teamId)
+      .select('sheet_responses.*')
+      .first();
+
+    console.log('🔍 Found response:', response);
+
+    if (!response) {
+      console.log('❌ Response not found or access denied');
+      return res.status(404).json({ error: 'Response not found or access denied' });
+    }
+
+    // Filter and validate the update data
+    const allowedFields = [
+      'status', 'current_status', 'deployed_in_ke', 'vendor_contact_date',
+      'patching_est_release_date', 'implementation_date', 'estimated_completion_date',
+      'vendor_contacted', 'compensatory_controls_provided', 'compensatory_controls_details',
+      'estimated_time', 'comments', 'site'
+    ];
+
+    const filteredUpdateData = {};
+    Object.keys(updateData).forEach(key => {
+      if (allowedFields.includes(key) && updateData[key] !== undefined) {
+        // Convert empty strings to null for database compatibility
+        filteredUpdateData[key] = updateData[key] === "" ? null : updateData[key];
+      }
+    });
+
+    console.log('🔧 Filtered update data:', filteredUpdateData);
+
+    // Add updated_by and timestamp
+    filteredUpdateData.updated_by = userId;
+    filteredUpdateData.updated_at = db.fn.now();
+
+    console.log('📝 Final update data:', filteredUpdateData);
+
+    // Update the response using direct database query instead of model
+    try {
+      const result = await db('sheet_responses')
+        .where('id', responseId)
+        .update(filteredUpdateData)
+        .returning('*');
+      
+      const updatedResponse = result[0];
+      console.log('✅ Response updated successfully:', updatedResponse);
+
+      // Update team sheet status to in_progress if not already
+      await db('team_sheets')
+        .where('id', response.team_sheet_id)
+        .where('status', 'assigned')
+        .update({
+          status: 'in_progress',
+          started_at: db.raw('COALESCE(started_at, CURRENT_TIMESTAMP)'),
+          started_by: userId
+        });
+
+      // Create notification for admins about draft activity
+      try {
+        // Get basic response details without joining sheet_entries (in case original_entry_id doesn't exist)
+        const responseWithDetails = await db('sheet_responses as sr')
+          .join('team_sheets as ts', 'sr.team_sheet_id', 'ts.id')
+          .join('teams as t', 'ts.team_id', 't.id')
+          .join('sheets as s', 'ts.sheet_id', 's.id')
+          .join('users as u', 'u.id', userId)
+          .where('sr.id', responseId)
+          .select(
+            't.name as team_name',
+            's.title as sheet_title',
+            'u.username as updated_by_name'
+          )
+          .first();
+
+        if (responseWithDetails) {
+          await NotificationService.createNotification({
+            user_id: userId,
+            type: 'team_draft_saved',
+            title: 'Team Draft Saved',
+            message: `${responseWithDetails.updated_by_name} from ${responseWithDetails.team_name} saved a draft in sheet "${responseWithDetails.sheet_title}"`,
+            data: {
+              response_id: responseId,
+              team_id: teamId,
+              team_name: responseWithDetails.team_name,
+              sheet_id: response.sheet_id,
+              action: 'draft_saved'
+            }
+          });
+        }
+      } catch (notificationError) {
+        console.error('Failed to create draft notification:', notificationError);
+        // Don't fail the request if notification fails
+      }
+
+      res.json(updatedResponse);
+    } catch (updateError) {
+      console.error('❌ Failed to update response:', updateError);
+      res.status(500).json({ error: 'Failed to update response' });
+    }
+  } catch (error) {
+    console.error('Error saving draft:', error);
+    res.status(500).json({ error: 'Failed to save draft' });
   }
 });
 
@@ -270,6 +444,85 @@ router.put('/sheets/:sheetId/complete', auth, async (req, res) => {
   }
 });
 
+// Admin: Unlock team sheet (reset from completed back to in_progress)
+router.put('/admin/sheets/:sheetId/teams/:teamId/unlock', auth, async (req, res) => {
+  try {
+    const { sheetId, teamId } = req.params;
+    const { reason = 'Admin decision' } = req.body;
+    const userId = req.user.id;
+
+    // Check if user is admin
+    const user = await db('users').where('id', userId).first();
+    if (!user || user.role !== 'admin') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    // Verify the team sheet assignment exists
+    const teamSheet = await db('team_sheets')
+      .join('teams', 'team_sheets.team_id', 'teams.id')
+      .where('team_sheets.sheet_id', sheetId)
+      .where('team_sheets.team_id', teamId)
+      .select('team_sheets.*', 'teams.name as team_name')
+      .first();
+
+    if (!teamSheet) {
+      return res.status(404).json({ error: 'Team sheet assignment not found' });
+    }
+
+    // Only allow unlocking if status is 'completed'
+    if (teamSheet.status !== 'completed') {
+      return res.status(400).json({ error: 'Can only unlock completed sheets' });
+    }
+
+    // Update team sheet status back to in_progress
+    await db('team_sheets')
+      .where('id', teamSheet.id)
+      .update({
+        status: 'in_progress',
+        completed_at: null,
+        updated_at: db.fn.now()
+      });
+
+    // Create notification for the team about the unlock
+    try {
+      const teamMembers = await db('users').where('team_id', teamId).select('id');
+      
+      for (const member of teamMembers) {
+        await NotificationService.createNotification({
+          user_id: member.id,
+          type: 'sheet_unlocked',
+          title: 'Sheet Unlocked',
+          message: `Your sheet "${teamSheet.sheet_title || 'Sheet'}" has been unlocked by an administrator. You can now continue working on it.`,
+          data: {
+            sheet_id: sheetId,
+            team_id: teamId,
+            team_name: teamSheet.team_name,
+            unlocked_by: user.username,
+            reason: reason,
+            action: 'sheet_unlocked'
+          }
+        });
+      }
+    } catch (notificationError) {
+      console.error('Failed to create unlock notification:', notificationError);
+      // Don't fail the request if notification fails
+    }
+
+    res.json({
+      message: 'Sheet unlocked successfully',
+      team_sheet_id: teamSheet.id,
+      team_name: teamSheet.team_name,
+      new_status: 'in_progress',
+      unlocked_by: user.username,
+      unlock_reason: reason
+    });
+
+  } catch (error) {
+    console.error('Error unlocking team sheet:', error);
+    res.status(500).json({ error: 'Failed to unlock team sheet' });
+  }
+});
+
 // Get team's assigned sheets
 router.get('/my-sheets', auth, async (req, res) => {
   try {
@@ -313,8 +566,6 @@ router.get('/my-sheets', auth, async (req, res) => {
           status: teamSheet.sheet?.status,
           total_entries: responses.length,
           completed_entries: completedResponses.length,
-          progress_percentage: responses.length > 0 ? 
-            Math.round((completedResponses.length / responses.length) * 100) : 0,
           is_completed: completedResponses.length === responses.length && responses.length > 0
         };
       })

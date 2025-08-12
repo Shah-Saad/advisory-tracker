@@ -6,6 +6,10 @@ exports.up = function(knex) {
   return knex.schema.alterTable('sheet_responses', function(table) {
     // First, add the foreign key to sheet_entries (if it doesn't exist)
     // Note: original_entry_id might already exist, so we'll handle this carefully
+    if (!knex.schema.hasColumn('sheet_responses', 'original_entry_id')) {
+      table.integer('original_entry_id').unsigned();
+      table.foreign('original_entry_id').references('id').inTable('sheet_entries').onDelete('CASCADE');
+    }
     
     // Remove redundant fields that are already in sheet_entries
     // These fields are duplicated and should be retrieved via join instead

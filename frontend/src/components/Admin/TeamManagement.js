@@ -109,16 +109,9 @@ const TeamManagement = () => {
   };
 
   const getTeamColor = (teamName) => {
-    const colors = {
-      generation: '#3b82f6',
-      distribution: '#10b981',
-      transmission: '#f59e0b'
-    };
-    return colors[teamName] || '#6b7280';
-  };
-
-  const getProgressPercentage = (completed, total) => {
-    return total > 0 ? Math.round((completed / total) * 100) : 0;
+    const colors = ['#007bff', '#28a745', '#ffc107', '#dc3545', '#6c757d', '#17a2b8'];
+    const index = teamName.length % colors.length;
+    return colors[index];
   };
 
   if (loading) {
@@ -222,16 +215,7 @@ const TeamManagement = () => {
 
             <div className="progress-section">
               <div className="progress-label">
-                Progress: {getProgressPercentage(team.completed_entries, team.total_entries)}%
-              </div>
-              <div className="progress-bar">
-                <div 
-                  className="progress-fill"
-                  style={{ 
-                    width: `${getProgressPercentage(team.completed_entries, team.total_entries)}%`,
-                    backgroundColor: getTeamColor(team.team_name)
-                  }}
-                ></div>
+                Entries: {team.completed_entries}/{team.total_entries}
               </div>
             </div>
 

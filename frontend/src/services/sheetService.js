@@ -103,6 +103,20 @@ const sheetService = {
     }
   },
 
+  // Save draft - new method for saving all form data
+  saveTeamResponseDraft: async (responseId, data) => {
+    try {
+      console.log('🔄 Calling saveTeamResponseDraft with:', { responseId, data });
+      const response = await apiClient.put(`/team-responses/responses/${responseId}/draft`, data);
+      console.log('✅ saveTeamResponseDraft response:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('❌ saveTeamResponseDraft error:', error);
+      console.error('❌ Error response:', error.response?.data);
+      throw error.response?.data || { message: 'Failed to save draft' };
+    }
+  },
+
   // Delete entry
   deleteEntry: async (id) => {
     try {
@@ -141,6 +155,18 @@ const sheetService = {
       return response.data;
     } catch (error) {
       throw error.response?.data || { message: 'Failed to complete team sheet' };
+    }
+  },
+
+  // Admin: Unlock team sheet (reset from completed back to in_progress)
+  unlockTeamSheet: async (sheetId, teamId, reason = '') => {
+    try {
+      const response = await apiClient.put(`/team-responses/admin/sheets/${sheetId}/teams/${teamId}/unlock`, {
+        reason
+      });
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to unlock team sheet' };
     }
   },
 
@@ -259,7 +285,7 @@ const sheetService = {
   // Admin-only: Get detailed team sheet data (using teamKey string)
   getAdminTeamSheetData: async (sheetId, teamKey) => {
     try {
-      const response = await apiClient.get(`/sheets/${sheetId}/team-data/${teamKey}`);
+      const response = await apiClient.get(`/admin/team-sheets/${sheetId}/${teamKey}`);
       return response.data;
     } catch (error) {
       throw error.response?.data || { message: 'Failed to fetch team sheet data' };

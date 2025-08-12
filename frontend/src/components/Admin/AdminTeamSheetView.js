@@ -13,10 +13,13 @@ const AdminTeamSheetView = () => {
   const [lastUpdated, setLastUpdated] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [sseConnected, setSseConnected] = useState(false);
+  const [unlocking, setUnlocking] = useState(false);
   const intervalRef = useRef(null);
 
   const loadTeamSheetData = useCallback(async (silent = false) => {
     try {
+      console.log('🔄 loadTeamSheetData called with:', { sheetId, teamKey, silent });
+      
       if (!silent) {
         setLoading(true);
         setError('');
@@ -25,7 +28,9 @@ const AdminTeamSheetView = () => {
       }
       
       // Fetch detailed team sheet data
+      console.log('📞 Calling sheetService.getAdminTeamSheetData...');
       const detailedData = await sheetService.getAdminTeamSheetData(sheetId, teamKey);
+      console.log('✅ getAdminTeamSheetData response:', detailedData);
       
       setTeamData({
         ...detailedData,
@@ -36,9 +41,9 @@ const AdminTeamSheetView = () => {
       setLastUpdated(new Date());
       
     } catch (error) {
-      console.error('Error fetching team sheet data:', error);
+      console.error('❌ Error fetching team sheet data:', error);
       if (!silent) {
-        setError('Failed to load team sheet data');
+        setError('Failed to load team sheet data: ' + (error.message || 'Unknown error'));
       }
     } finally {
       if (!silent) {
@@ -50,95 +55,32 @@ const AdminTeamSheetView = () => {
   }, [sheetId, teamKey]);
 
   useEffect(() => {
-    loadTeamSheetData();
-    
-    // Set up auto-refresh (reduced frequency since we have real-time updates)
-    if (isAutoRefresh) {
-      intervalRef.current = setInterval(() => {
-        loadTeamSheetData(true); // silent refresh
-      }, 30000); // Keep 30 seconds as backup
+    console.log('🔄 AdminTeamSheetView useEffect triggered:', { sheetId, teamKey });
+    if (sheetId && teamKey) {
+      loadTeamSheetData();
     }
+  }, [sheetId, teamKey, loadTeamSheetData]);
 
-    return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-      }
-    };
-  }, [sheetId, teamKey, isAutoRefresh, loadTeamSheetData]);
-
-  // Set up SSE connection for real-time updates
+  // Auto-refresh functionality
   useEffect(() => {
-    console.log('AdminTeamSheetView: Setting up SSE for sheet', sheetId);
-    
-    // Always ensure we have a connection - reconnect if needed
-    const connectionStatus = sseService.getConnectionStatus();
-    console.log('Current SSE status:', connectionStatus);
-    
-    if (!connectionStatus.isConnected) {
-      console.log('SSE not connected - connecting now for admin live view');
-      sseService.connect();
-    } else {
-      console.log('SSE already connected - using existing connection');
-      setSseConnected(true);
+    let interval;
+    if (isAutoRefresh && teamData) {
+      interval = setInterval(() => {
+        loadTeamSheetData(true); // Use silent refresh
+      }, 30000); // Refresh every 30 seconds
     }
-
-    // Handle connection status
-    const handleSSEConnected = () => {
-      setSseConnected(true);
-      console.log('AdminTeamSheetView: Real-time updates connected for sheet', sheetId);
-    };
-
-    const handleSSEDisconnected = () => {
-      setSseConnected(false);
-      console.log('AdminTeamSheetView: Real-time updates disconnected for sheet', sheetId);
-      
-      // Don't immediately attempt to reconnect - let the SSE service handle its own reconnection logic
-    };
-
-    // Handle team sheet updates
-    const handleTeamSheetUpdate = (data) => {
-      console.log('AdminTeamSheetView: Received real-time update for sheet', sheetId, ':', data);
-      
-      // If this update is for the current sheet, refresh the data
-      if (data.data && data.data.entry && data.data.entry.sheet_id === parseInt(sheetId)) {
-        console.log('AdminTeamSheetView: Update is for current sheet', sheetId, '- refreshing data...');
-        loadTeamSheetData(true); // Silent refresh to show the updates
-        setLastUpdated(new Date());
-      } else {
-        console.log('AdminTeamSheetView: Update is for different sheet', data.data?.entry?.sheet_id, '- ignoring');
-      }
-    };
-
-    // Register event listeners
-    sseService.addEventListener('connected', handleSSEConnected);
-    sseService.addEventListener('team_sheet_updated', handleTeamSheetUpdate);
-    sseService.addEventListener('maxReconnectAttemptsReached', handleSSEDisconnected);
-
-    // Check initial connection status
-    if (sseService.getConnectionStatus().isConnected) {
-      setSseConnected(true);
-    }
-
-    // Cleanup on unmount
     return () => {
-      sseService.removeEventListener('connected', handleSSEConnected);
-      sseService.removeEventListener('team_sheet_updated', handleTeamSheetUpdate);
-      sseService.removeEventListener('maxReconnectAttemptsReached', handleSSEDisconnected);
-      // Don't disconnect here as other admin views might be using it
+      if (interval) clearInterval(interval);
     };
-  }, [sheetId, loadTeamSheetData]);
+  }, [isAutoRefresh, teamData, loadTeamSheetData]);
 
-  const toggleAutoRefresh = () => {
-    setIsAutoRefresh(!isAutoRefresh);
-  };
-
-  const handleManualRefresh = () => {
-    loadTeamSheetData();
-  };
-
-  const formatDate = (dateString) => {
-    if (!dateString) return 'N/A';
-    return new Date(dateString).toLocaleDateString();
+  // Check for recent updates and highlight them
+  const isRecentlyUpdated = (updatedAt) => {
+    if (!updatedAt) return false;
+    const updateTime = new Date(updatedAt);
+    const now = new Date();
+    const diffInMinutes = (now - updateTime) / (1000 * 60);
+    return diffInMinutes < 5; // Highlight updates from last 5 minutes
   };
 
   const formatTimeAgo = (date) => {
@@ -148,31 +90,44 @@ const AdminTeamSheetView = () => {
     const minutes = Math.floor(diff / (1000 * 60));
     const hours = Math.floor(diff / (1000 * 60 * 60));
     
-    if (minutes < 1) return 'Just now';
+    if (minutes < 1) return 'just now';
     if (minutes < 60) return `${minutes}m ago`;
     if (hours < 24) return `${hours}h ago`;
     return date.toLocaleDateString();
   };
 
-  const getProgressPercentage = (responses) => {
-    if (!responses || responses.length === 0) return 0;
-    
-    const totalEntries = responses.length;
-    const completedEntries = responses.filter(r => {
-      // Consider an entry "completed" if it has key fields filled out
-      return r.current_status && r.vendor_contacted && 
-             ((r.deployed_in_ke === 'Y' && r.compensatory_controls_provided) || r.deployed_in_ke === 'N');
-    }).length;
-    
-    return Math.round((completedEntries / totalEntries) * 100);
+  const formatDate = (dateString) => {
+    if (!dateString) return 'N/A';
+    return new Date(dateString).toLocaleDateString();
   };
 
-  const isRecentlyUpdated = (updatedAt) => {
-    if (!updatedAt) return false;
-    const now = new Date();
-    const updated = new Date(updatedAt);
-    const diffMinutes = (now - updated) / (1000 * 60);
-    return diffMinutes <= 30; // Consider "recent" if updated within last 30 minutes
+  const handleUnlockSheet = async () => {
+    if (!window.confirm(`Are you sure you want to unlock this sheet for ${teamData.teamName}? This will reset the sheet status from completed back to in-progress, allowing the team to continue working on it.`)) {
+      return;
+    }
+
+    setUnlocking(true);
+    try {
+      const reason = prompt('Please provide a reason for unlocking this sheet (optional):') || 'Admin decision';
+      
+      // Get team ID from the assignment data
+      const teamId = teamData.assignment?.team_id || teamData.team_id;
+      if (!teamId) {
+        throw new Error('Team ID not found');
+      }
+      
+      await sheetService.unlockTeamSheet(sheetId, teamId, reason);
+      
+      // Refresh the data to show updated status
+      await loadTeamSheetData();
+      
+      alert('Sheet unlocked successfully! The team can now continue working on it.');
+    } catch (error) {
+      console.error('Failed to unlock sheet:', error);
+      alert('Failed to unlock sheet: ' + (error.message || 'Unknown error'));
+    } finally {
+      setUnlocking(false);
+    }
   };
 
   const getEntryStatusColor = (response) => {
@@ -253,27 +208,50 @@ const AdminTeamSheetView = () => {
             </div>
             <div className="d-flex gap-2">
               <button 
-                className={`btn btn-sm ${isAutoRefresh ? 'btn-success' : 'btn-outline-secondary'}`}
-                onClick={toggleAutoRefresh}
-                title={isAutoRefresh ? 'Real-time updates + 30s backup refresh' : 'Only real-time updates (backup refresh disabled)'}
-              >
-                <i className={`fas ${isAutoRefresh ? 'fa-sync-alt fa-spin' : 'fa-pause'} me-1`}></i>
-                {isAutoRefresh ? 'Live' : 'Paused'}
-              </button>
-              <button 
-                className="btn btn-sm btn-outline-primary" 
-                onClick={handleManualRefresh}
-                disabled={loading || refreshing}
-              >
-                <i className="fas fa-refresh me-1"></i>
-                Refresh
-              </button>
-              <button 
                 className="btn btn-outline-secondary" 
                 onClick={() => navigate('/admin/team-sheets')}
               >
                 <i className="fas fa-arrow-left me-1"></i>
-                Back to Overview
+                Back to Sheets
+              </button>
+              
+              {/* Show unlock button only if sheet is completed */}
+              {teamData.assignment?.status === 'completed' && (
+                <button 
+                  className="btn btn-warning" 
+                  onClick={handleUnlockSheet}
+                  disabled={unlocking}
+                  title="Unlock sheet to allow team to continue working"
+                >
+                  {unlocking ? (
+                    <>
+                      <span className="spinner-border spinner-border-sm me-1" role="status"></span>
+                      Unlocking...
+                    </>
+                  ) : (
+                    <>
+                      <i className="fas fa-unlock me-1"></i>
+                      Unlock Sheet
+                    </>
+                  )}
+                </button>
+              )}
+              
+              <button 
+                className="btn btn-outline-primary" 
+                onClick={() => loadTeamSheetData()}
+                disabled={refreshing}
+              >
+                <i className="fas fa-sync-alt me-1"></i>
+                {refreshing ? 'Refreshing...' : 'Refresh'}
+              </button>
+              
+              <button 
+                className={`btn ${isAutoRefresh ? 'btn-success' : 'btn-outline-success'}`}
+                onClick={() => setIsAutoRefresh(!isAutoRefresh)}
+              >
+                <i className="fas fa-eye me-1"></i>
+                {isAutoRefresh ? 'Auto-refresh ON' : 'Auto-refresh OFF'}
               </button>
             </div>
           </div>
@@ -298,22 +276,6 @@ const AdminTeamSheetView = () => {
                   <h6 className="mb-0">Team Progress & Status</h6>
                 </div>
                 <div className="card-body">
-                  <div className="mb-3">
-                    <div className="d-flex justify-content-between align-items-center mb-1">
-                      <span><strong>Completion Progress:</strong></span>
-                      <span className="badge bg-primary">{getProgressPercentage(teamData.responses)}%</span>
-                    </div>
-                    <div className="progress">
-                      <div 
-                        className="progress-bar bg-success" 
-                        role="progressbar" 
-                        style={{width: `${getProgressPercentage(teamData.responses)}%`}}
-                        aria-valuenow={getProgressPercentage(teamData.responses)} 
-                        aria-valuemin="0" 
-                        aria-valuemax="100"
-                      ></div>
-                    </div>
-                  </div>
                   <p><strong>Assignment Status:</strong> 
                     <span className={`ms-2 badge ${
                       teamData.assignment_status === 'completed' ? 'bg-success' :
@@ -322,7 +284,28 @@ const AdminTeamSheetView = () => {
                     }`}>
                       {teamData.assignment_status?.replace('_', ' ') || 'Unknown'}
                     </span>
+                    {teamData.assignment_status === 'completed' && (
+                      <button
+                        className="btn btn-outline-warning btn-sm ms-2"
+                        onClick={handleUnlockSheet}
+                        disabled={unlocking}
+                        title="Unlock this sheet to allow the team to edit their responses again"
+                      >
+                        {unlocking ? (
+                          <>
+                            <div className="spinner-border spinner-border-sm me-1" role="status"></div>
+                            Unlocking...
+                          </>
+                        ) : (
+                          <>
+                            <i className="fas fa-unlock me-1"></i>
+                            Unlock Sheet
+                          </>
+                        )}
+                      </button>
+                    )}
                   </p>
+                  <p><strong>Total Responses:</strong> {teamData.responses?.length || 0}</p>
                   <p><strong>Assigned At:</strong> {teamData.assigned_at ? formatDate(teamData.assigned_at) : 'N/A'}</p>
                   <p><strong>Submitted At:</strong> {teamData.submitted_at ? formatDate(teamData.submitted_at) : 'Not submitted'}</p>
                 </div>

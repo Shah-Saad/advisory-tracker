@@ -46,6 +46,23 @@ const TeamSheetEditor = () => {
             }
           }));
         }
+      } else if (data.type === 'team_response_updated' && data.data?.response) {
+        const updatedResponse = data.data.response;
+        const updatedBy = data.data.updatedBy;
+        
+        // Only sync if the update was made by someone else
+        if (updatedBy?.id !== user?.id) {
+          console.log(`🔄 Syncing team response ${updatedResponse.id} updated by ${updatedBy?.name || updatedBy?.email}`);
+          
+          // Update the specific response in our responses state
+          setResponses(prev => ({
+            ...prev,
+            [updatedResponse.original_entry_id]: {
+              ...prev[updatedResponse.original_entry_id],
+              ...updatedResponse
+            }
+          }));
+        }
       }
     };
 
@@ -151,7 +168,7 @@ const TeamSheetEditor = () => {
   const autoSaveEntry = async (entryId, responseData) => {
     try {
       setAutoSaving(true);
-      console.log(`Auto-saving team response ${entryId} with data:`, responseData);
+      console.log(`🔄 Auto-saving team response ${entryId} with data:`, responseData);
       
       // Update the team response in the sheet_responses table
       const currentUser = authService.getCurrentUser();
@@ -167,20 +184,23 @@ const TeamSheetEditor = () => {
         throw new Error('Response not found');
       }
       
-      // Update the team response
-      await sheetService.updateTeamResponse(response.id, responseData);
+      console.log(`✅ Found team response record for auto-save:`, response);
+      
+      // Use the new draft saving method
+      const result = await sheetService.saveTeamResponseDraft(response.id, responseData);
+      console.log(`✅ Auto-save successful for entry ${entryId}:`, result);
+      
       setLastSaved(new Date());
-      console.log(`✅ Auto-saved team response ${entryId} successfully`);
-      
-      // Immediately force a state update to reflect changes in UI
-      setResponses(prev => ({
-        ...prev,
-        [entryId]: responseData
-      }));
-      
     } catch (error) {
-      console.error(`❌ Failed to auto-save team response ${entryId}:`, error);
-      // Don't show error for auto-saves to avoid overwhelming the user
+      console.error(`❌ Auto-save failed for entry ${entryId}:`, error);
+      console.error('❌ Auto-save error details:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status
+      });
+      
+      // Don't show alert for auto-save failures, just log them
+      setError(`Auto-save failed: ${error.message}`);
     } finally {
       setAutoSaving(false);
     }
@@ -296,13 +316,21 @@ const TeamSheetEditor = () => {
 
   const handleSaveDraft = async () => {
     try {
-      // Update each entry individually with cache-busting
+      console.log('🔄 Starting draft save process...');
+      console.log('📝 Responses to save:', responses);
+      
+      if (!responses || Object.keys(responses).length === 0) {
+        alert('No data to save. Please fill in some fields first.');
+        return;
+      }
+      
+      // Update each team response individually
       for (const entryId in responses) {
         const responseData = {
           ...responses[entryId],
           _timestamp: Date.now() // Add cache-busting timestamp
         };
-        console.log(`Saving draft for entry ${entryId}:`, responseData);
+        console.log(`💾 Saving draft for team response ${entryId}:`, responseData);
         
         // Log specific date fields
         const dateFields = ['vendor_contact_date', 'patching_est_release_date', 'implementation_date'];
@@ -312,13 +340,42 @@ const TeamSheetEditor = () => {
           }
         });
         
-        await sheetService.updateEntry(entryId, responseData);
+        // Find the team response record
+        const response = entries.find(r => r.id === parseInt(entryId));
+        if (!response) {
+          console.warn(`⚠️ Team response not found for entry ${entryId}`);
+          continue;
+        }
+        
+        console.log(`✅ Found team response record:`, response);
+        
+        // Use the new draft saving method
+        const result = await sheetService.saveTeamResponseDraft(response.id, responseData);
+        console.log(`✅ Draft saved successfully for entry ${entryId}:`, result);
       }
+      
+      console.log('🎉 All drafts saved successfully!');
       alert('Draft saved successfully!');
       await loadSheetData(); // Reload to show updated data
     } catch (err) {
-      console.error('Failed to save draft:', err);
-      setError(err.message || 'Failed to save draft');
+      console.error('❌ Failed to save draft:', err);
+      console.error('❌ Error details:', {
+        message: err.message,
+        response: err.response?.data,
+        status: err.response?.status,
+        stack: err.stack
+      });
+      
+      // Show more specific error message
+      let errorMessage = 'Failed to save draft';
+      if (err.response?.data?.error) {
+        errorMessage = err.response.data.error;
+      } else if (err.message) {
+        errorMessage = err.message;
+      }
+      
+      setError(errorMessage);
+      alert(`Failed to save draft: ${errorMessage}`);
     }
   };
 

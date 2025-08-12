@@ -27,6 +27,8 @@ const sheetController = {
     try {
       const { id, teamKey } = req.params;
       
+      console.log('🔄 getTeamSheetData called with:', { id, teamKey });
+      
       // Map team key to team ID (using correct team IDs from database)
       const teamMap = {
         'generation': 44,
@@ -35,13 +37,20 @@ const sheetController = {
       };
       
       const teamId = teamMap[teamKey.toLowerCase()];
+      console.log('🔍 Mapped team key to ID:', { teamKey, teamId });
+      
       if (!teamId) {
+        console.log('❌ Invalid team key:', teamKey);
         return res.status(400).json({ error: 'Invalid team key' });
       }
       
+      console.log('📞 Calling SheetService.getTeamSheetData...');
       const teamData = await SheetService.getTeamSheetData(id, teamId);
+      console.log('✅ SheetService.getTeamSheetData returned:', teamData ? 'success' : 'null');
+      
       res.json(teamData);
     } catch (error) {
+      console.error('❌ Error in getTeamSheetData:', error);
       const statusCode = error.message === 'Sheet not found' ? 404 : 500;
       res.status(statusCode).json({ error: error.message });
     }

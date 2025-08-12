@@ -32,11 +32,14 @@ const MyTeamSheets = ({ user }) => {
     }
   };
 
-  const getProgressBarClass = (percentage) => {
-    if (percentage === 100) return 'bg-success';
-    if (percentage >= 75) return 'bg-info';
-    if (percentage >= 50) return 'bg-warning';
-    return 'bg-danger';
+  const getStatusBadgeClass = (status) => {
+    switch (status?.toLowerCase()) {
+      case 'completed': return 'badge bg-success';
+      case 'in_progress': return 'badge bg-warning text-dark';
+      case 'assigned': return 'badge bg-primary';
+      case 'pending': return 'badge bg-secondary';
+      default: return 'badge bg-light text-dark';
+    }
   };
 
   const getStatusBadge = (isCompleted, progressPercentage) => {
@@ -164,15 +167,8 @@ const MyTeamSheets = ({ user }) => {
                       
                       <div className="mb-3">
                         <div className="d-flex justify-content-between align-items-center mb-1">
-                          <small className="text-muted">Progress</small>
-                          <small className="fw-medium">{sheet.progress_percentage}%</small>
-                        </div>
-                        <div className="progress" style={{ height: '8px' }}>
-                          <div 
-                            className={`progress-bar ${getProgressBarClass(sheet.progress_percentage)}`}
-                            role="progressbar" 
-                            style={{ width: `${sheet.progress_percentage}%` }}
-                          ></div>
+                          <small className="text-muted">Status</small>
+                          <small className="fw-medium">{sheet.status || 'Unknown'}</small>
                         </div>
                       </div>
 

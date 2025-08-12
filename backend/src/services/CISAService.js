@@ -521,8 +521,6 @@ class CISAService {
         existing.l = { Target: advisories[i].link || '', Tooltip: advisories[i].title || 'View advisory' };
         existing.v = 'CISA';
         worksheet[cellAddr] = existing;
-        // Note: CVEs are already included in the data rows from fetchAdvisoryDetails
-        // No need to extract from title as we have proper CVE extraction
       }
 
       // Sheet name

@@ -424,8 +424,15 @@ router.get('/team-sheets', async (req, res) => {
 
 router.get('/team-sheets/:id/:teamKey', async (req, res) => {
   try {
-    await sheetController.getTeamSheetDataByKey(req, res);
+    console.log('🔄 Admin team sheet request:', {
+      id: req.params.id,
+      teamKey: req.params.teamKey,
+      user: req.user?.id
+    });
+    
+    await sheetController.getTeamSheetData(req, res);
   } catch (error) {
+    console.error('❌ Error in admin team sheet route:', error);
     res.status(500).json({ error: 'Failed to load team sheet data' });
   }
 });

@@ -2,12 +2,12 @@ const db = require('../config/db');
 
 class SheetResponse {
   static async findAll() {
-    const result = await db.query('SELECT * FROM sheet_responses ORDER BY created_at DESC');
+    const result = await db.raw('SELECT * FROM sheet_responses ORDER BY created_at DESC');
     return result.rows;
   }
 
   static async findById(id) {
-    const result = await db.query('SELECT * FROM sheet_responses WHERE id = $1', [id]);
+    const result = await db.raw('SELECT * FROM sheet_responses WHERE id = $1', [id]);
     return result.rows[0];
   }
 
@@ -21,11 +21,11 @@ class SheetResponse {
   }
 
   static async findByTeamSheetAndEntry(teamSheetId, originalEntryId) {
-    const result = await db.query(
-      'SELECT * FROM sheet_responses WHERE team_sheet_id = $1 AND original_entry_id = $2',
-      [teamSheetId, originalEntryId]
-    );
-    return result.rows[0];
+    const result = await db('sheet_responses')
+      .where('team_sheet_id', teamSheetId)
+      .where('original_entry_id', originalEntryId)
+      .first();
+    return result;
   }
 
   static async findByTeamSheet(sheetId, teamId) {
@@ -40,7 +40,7 @@ class SheetResponse {
         'se.oem_vendor as vendor_name',
         'se.cve',
         'se.source',
-        'se.risk_level as original_risk_level',
+        'se.risk_level',
         'se.site as original_site',
         'ts.id as team_sheet_id'
       )
@@ -65,61 +65,69 @@ class SheetResponse {
       compensatory_controls_details,
       estimated_time,
       comments,
+      site,
       updated_by
     } = responseData;
 
-    const result = await db.query(`
-      INSERT INTO sheet_responses (
-        team_sheet_id, original_entry_id, status, current_status, deployed_in_ke,
-        vendor_contact_date, patching_est_release_date, implementation_date,
-        estimated_completion_date, vendor_contacted, compensatory_controls_provided,
-        compensatory_controls_details, estimated_time, comments, updated_by,
-        created_at, updated_at
-      ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
-        NOW(), NOW()
-      ) RETURNING *
-    `, [
-      team_sheet_id, original_entry_id, status, current_status, deployed_in_ke,
-      vendor_contact_date, patching_est_release_date, implementation_date,
-      estimated_completion_date, vendor_contacted, compensatory_controls_provided,
-      compensatory_controls_details, estimated_time, comments, updated_by
-    ]);
+    const result = await db('sheet_responses')
+      .insert({
+        team_sheet_id,
+        original_entry_id,
+        status,
+        current_status,
+        deployed_in_ke,
+        vendor_contact_date,
+        patching_est_release_date,
+        implementation_date,
+        estimated_completion_date,
+        vendor_contacted,
+        compensatory_controls_provided,
+        compensatory_controls_details,
+        estimated_time,
+        comments,
+        site,
+        updated_by,
+        created_at: db.fn.now(),
+        updated_at: db.fn.now()
+      })
+      .returning('*');
 
-    return result.rows[0];
+    return result[0];
   }
 
   static async update(id, responseData) {
-    const fields = [];
-    const values = [];
-    let paramCounter = 1;
-
-    // Build dynamic update query
+    console.log('🔄 SheetResponse.update called with:', { id, responseData });
+    
+    // Filter out undefined values and the id field
+    const updateData = {};
     Object.keys(responseData).forEach(key => {
       if (responseData[key] !== undefined && key !== 'id') {
-        fields.push(`${key} = $${paramCounter}`);
-        values.push(responseData[key]);
-        paramCounter++;
+        updateData[key] = responseData[key];
       }
     });
 
-    // Always update the updated_at timestamp
-    fields.push(`updated_at = CURRENT_TIMESTAMP`);
-    values.push(id);
+    // Always update the timestamp
+    updateData.updated_at = db.fn.now();
 
-    const query = `
-      UPDATE sheet_responses 
-      SET ${fields.join(', ')}
-      WHERE id = $${paramCounter}
-      RETURNING *
-    `;
+    console.log('📝 Final update data for database:', updateData);
 
-    const result = await db.query(query, values);
-    return result.rows[0];
+    try {
+      // Use Knex query builder instead of raw SQL
+      const result = await db('sheet_responses')
+        .where('id', id)
+        .update(updateData)
+        .returning('*');
+
+      console.log('✅ SheetResponse.update successful:', result[0]);
+      return result[0];
+    } catch (error) {
+      console.error('❌ SheetResponse.update failed:', error);
+      throw error;
+    }
   }
 
   static async delete(id) {
-    const result = await db.query('DELETE FROM sheet_responses WHERE id = $1 RETURNING *', [id]);
+    const result = await db.raw('DELETE FROM sheet_responses WHERE id = $1 RETURNING *', [id]);
     return result.rows[0];
   }
 
@@ -154,6 +162,7 @@ class SheetResponse {
         compensatory_controls_details: entry.compensatory_controls_details,
         estimated_time: entry.estimated_time,
         comments: entry.comments,
+        site: entry.site,
         updated_by: null, // Will be set when team member actually updates
         created_at: new Date(),
         updated_at: new Date()

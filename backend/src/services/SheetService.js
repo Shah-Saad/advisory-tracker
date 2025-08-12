@@ -298,11 +298,10 @@ class SheetService {
         
         // Only include fields that actually exist in the current database schema
         const actualValidColumns = [
-          'product_name', 'vendor_name', 'site', 'status', 'current_status',
-          'deployed_in_ke', 'risk_level', 'cve', 'date', 'vendor_contact_date',
+          'status', 'current_status', 'deployed_in_ke', 'vendor_contact_date',
           'patching_est_release_date', 'implementation_date', 'estimated_completion_date',
           'vendor_contacted', 'compensatory_controls_provided',
-          'compensatory_controls_details', 'estimated_time', 'comments'
+          'compensatory_controls_details', 'estimated_time', 'comments', 'site'
         ];
         
         if (actualValidColumns.includes(dbColumnName)) {
@@ -766,29 +765,10 @@ class SheetService {
       .orderBy('id');
 
     // Get team-specific responses from sheet_responses table
-    const teamResponses = await db('sheet_responses as sr')
-      .join('sheet_entries as se', 'sr.original_entry_id', 'se.id')
-      .join('team_sheets as ts', 'sr.team_sheet_id', 'ts.id')
-      .where('ts.sheet_id', sheetId)
-      .where('ts.team_id', teamId)
-      .select(
-        'sr.*',
-        'se.product_name',
-        'se.oem_vendor as vendor_name',
-        'se.cve',
-        'se.source',
-        'se.risk_level as original_risk_level',
-        'se.site as original_site'
-      )
-      .orderBy('sr.id');
-
-    // If no team responses exist yet, initialize them
-    if (teamResponses.length === 0 && originalEntries.length > 0) {
-      console.log(`Initializing team responses for team ${team.name} (ID: ${teamId}) in sheet ${sheetId}`);
-      await SheetResponseService.initializeTeamSheetResponses(sheetId, [teamId], assignment.assigned_by);
-      
-      // Fetch the newly created responses
-      const newResponses = await db('sheet_responses as sr')
+    let teamResponses = [];
+    try {
+      // Try to get responses using the original_entry_id join
+      teamResponses = await db('sheet_responses as sr')
         .join('sheet_entries as se', 'sr.original_entry_id', 'se.id')
         .join('team_sheets as ts', 'sr.team_sheet_id', 'ts.id')
         .where('ts.sheet_id', sheetId)
@@ -803,21 +783,74 @@ class SheetService {
           'se.site as original_site'
         )
         .orderBy('sr.id');
-      
-      return {
-        sheet,
-        assignment,
-        responses: newResponses,
-        response_count: newResponses.length,
-        completion_percentage: assignment.completion_percentage || 0,
-        data_source: 'team_responses',
-        display_mode: 'team_specific'
-      };
+    } catch (error) {
+      console.log('⚠️ original_entry_id column not found, trying alternative approach');
+      // Fallback: get responses without joining sheet_entries
+      teamResponses = await db('sheet_responses as sr')
+        .join('team_sheets as ts', 'sr.team_sheet_id', 'ts.id')
+        .where('ts.sheet_id', sheetId)
+        .where('ts.team_id', teamId)
+        .select('sr.*')
+        .orderBy('sr.id');
+    }
+
+    // If no team responses exist yet, initialize them
+    if (teamResponses.length === 0 && originalEntries.length > 0) {
+      console.log(`Initializing team responses for team ${team.name} (ID: ${teamId}) in sheet ${sheetId}`);
+      try {
+        await SheetResponseService.initializeTeamSheetResponses(sheetId, [teamId], assignment.assigned_by);
+        
+        // Fetch the newly created responses
+        try {
+          const newResponses = await db('sheet_responses as sr')
+            .join('sheet_entries as se', 'sr.original_entry_id', 'se.id')
+            .join('team_sheets as ts', 'sr.team_sheet_id', 'ts.id')
+            .where('ts.sheet_id', sheetId)
+            .where('ts.team_id', teamId)
+            .select(
+              'sr.*',
+              'se.product_name',
+              'se.oem_vendor as vendor_name',
+              'se.cve',
+              'se.source',
+              'se.risk_level as original_risk_level',
+              'se.site as original_site'
+            )
+            .orderBy('sr.id');
+          
+          teamResponses = newResponses;
+        } catch (error) {
+          console.log('⚠️ Could not fetch new responses with join, using fallback');
+          const newResponses = await db('sheet_responses as sr')
+            .join('team_sheets as ts', 'sr.team_sheet_id', 'ts.id')
+            .where('ts.sheet_id', sheetId)
+            .where('ts.team_id', teamId)
+            .select('sr.*')
+            .orderBy('sr.id');
+          
+          teamResponses = newResponses;
+        }
+      } catch (initError) {
+        console.error('Failed to initialize team responses:', initError);
+        // Continue with empty responses
+      }
     }
 
     return {
       sheet,
-      assignment,
+      assignment: {
+        ...assignment,
+        team_id: teamId,
+        team_name: team.name,
+        status: assignment.status || 'assigned',
+        assigned_at: assignment.assigned_at,
+        completed_at: assignment.completed_at
+      },
+      assignment_status: assignment.status || 'assigned',
+      team_id: teamId,
+      team_name: team.name,
+      assigned_at: assignment.assigned_at,
+      submitted_at: assignment.completed_at,
       responses: teamResponses,
       response_count: teamResponses.length,
       completion_percentage: assignment.completion_percentage || 0,
@@ -881,7 +914,7 @@ class SheetService {
         entry.team === assignment.team_id.toString()
       );
 
-      const teamResponses = submittedResponses.filter(response => 
+      const teamResponses = allTeamResponses.filter(response => 
         response.team_id === assignment.team_id
       );
 
@@ -909,8 +942,7 @@ class SheetService {
           total_entries: totalEntries,
           completed_entries: completedEntries,
           in_progress_entries: inProgressEntries,
-          pending_entries: pendingEntries,
-          completion_percentage: totalEntries > 0 ? Math.round((completedEntries / totalEntries) * 100) : 0
+          pending_entries: pendingEntries
         },
         last_updated: teamEntries.length > 0 ? 
           Math.max(...teamEntries.map(e => new Date(e.updated_at || e.created_at).getTime())) : null
@@ -929,10 +961,9 @@ class SheetService {
     return {
       sheet: {
         ...sheet,
-        total_entries,
+        total_entries: totalEntries,
         total_completed: totalCompleted,
-        total_in_progress: totalInProgress,
-        overall_completion_percentage: totalEntries > 0 ? Math.round((totalCompleted / totalEntries) * 100) : 0
+        total_in_progress: totalInProgress
       },
       team_views: teamViews,
       all_entries: allEntries,
@@ -942,42 +973,56 @@ class SheetService {
     };
   }
 
-  // Get real-time updates for a specific team's entries
+  // Get real-time updates for a specific team
   static async getTeamLiveUpdates(sheetId, teamId, lastUpdateTime = null) {
-    const db = require('../config/db');
-    
-    // Get team information
-    const team = await db('teams').where('id', teamId).first();
-    if (!team) {
-      throw new Error('Team not found');
+    try {
+      const db = require('../config/db');
+      
+      // Get team responses that have been updated since lastUpdateTime
+      let query = db('sheet_responses as sr')
+        .join('sheet_entries as se', 'sr.original_entry_id', 'se.id')
+        .join('team_sheets as ts', 'sr.team_sheet_id', 'ts.id')
+        .join('teams as t', 'ts.team_id', 't.id')
+        .where('ts.sheet_id', sheetId)
+        .where('t.id', teamId)
+        .select(
+          'sr.*',
+          'se.product_name',
+          'se.oem_vendor as vendor_name',
+          'se.cve',
+          'se.source',
+          'se.risk_level as original_risk_level',
+          'se.site as original_site',
+          't.name as team_name',
+          't.id as team_id'
+        )
+        .orderBy('sr.updated_at', 'desc');
+
+      // If lastUpdateTime is provided, only get updates since then
+      if (lastUpdateTime) {
+        query = query.where('sr.updated_at', '>', new Date(lastUpdateTime));
+      }
+
+      const updates = await query;
+
+      // Get team sheet status updates
+      const teamSheetUpdates = await db('team_sheets as ts')
+        .join('teams as t', 'ts.team_id', 't.id')
+        .where('ts.sheet_id', sheetId)
+        .where('t.id', teamId)
+        .select('ts.*', 't.name as team_name')
+        .first();
+
+      return {
+        updates: updates,
+        team_sheet_status: teamSheetUpdates,
+        last_update_time: new Date().toISOString(),
+        update_count: updates.length
+      };
+    } catch (error) {
+      console.error('Error getting team live updates:', error);
+      throw error;
     }
-
-    // Build query for entries with optional time filter
-    let query = db('sheet_entries')
-      .where('sheet_id', sheetId)
-      .where(function() {
-        this.where('assigned_team', team.name)
-          .orWhere('assigned_team', teamId.toString())
-          .orWhere('team', team.name)
-          .orWhere('team', teamId.toString());
-      });
-
-    // If lastUpdateTime is provided, only get entries updated since then
-    if (lastUpdateTime) {
-      query = query.where('updated_at', '>', lastUpdateTime);
-    }
-
-    const updatedEntries = await query
-      .select('*')
-      .orderBy('updated_at', 'desc');
-
-    return {
-      team_id: teamId,
-      team_name: team.name,
-      updated_entries: updatedEntries,
-      update_count: updatedEntries.length,
-      last_update: new Date().toISOString()
-    };
   }
 
   // Get summary of all teams' progress for admin dashboard
@@ -1030,8 +1075,7 @@ class SheetService {
         total_entries: teamEntries.length,
         completed_entries: completed,
         in_progress_entries: inProgress,
-        pending_entries: pending,
-        completion_percentage: teamEntries.length > 0 ? Math.round((completed / teamEntries.length) * 100) : 0
+        pending_entries: pending
       };
     });
 
@@ -1044,7 +1088,7 @@ class SheetService {
     return {
       sheet_id: sheetId,
       sheet_title: sheet.title,
-      total_entries,
+      total_entries: totalEntries,
       total_completed: totalCompleted,
       overall_completion_percentage: totalEntries > 0 ? Math.round((totalCompleted / totalEntries) * 100) : 0,
       team_progress: teamProgress,

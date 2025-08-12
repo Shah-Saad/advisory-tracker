@@ -169,12 +169,6 @@ const TeamSubmissionsOverview = () => {
     return statusMap[status] || 'badge-secondary';
   };
 
-  const getProgressBarClass = (percentage) => {
-    if (percentage >= 80) return 'bg-success';
-    if (percentage >= 50) return 'bg-warning';
-    return 'bg-secondary';
-  };
-
   if (loading) {
     return (
       <div className="d-flex justify-content-center p-4">
@@ -304,14 +298,6 @@ const TeamSubmissionsOverview = () => {
                             </div>
                           </div>
                         </div>
-                        <div className="col-md-3">
-                          <div className="card bg-light">
-                            <div className="card-body text-center">
-                              <h4 className="text-info">{liveData[sheet.id].sheet?.overall_completion_percentage || 0}%</h4>
-                              <small className="text-muted">Completion</small>
-                            </div>
-                          </div>
-                        </div>
                       </div>
 
                       {/* Team Progress Cards */}
@@ -325,14 +311,14 @@ const TeamSubmissionsOverview = () => {
                               <div className="card-body">
                                 <div className="mb-2">
                                   <div className="d-flex justify-content-between mb-1">
-                                    <small>Progress</small>
-                                    <small>{teamView.statistics.completion_percentage}%</small>
+                                    <small>Status</small>
+                                    <small className={getStatusBadgeClass(teamView.assignment_status)}>
+                                      {teamView.assignment_status?.replace('_', ' ').toUpperCase() || 'UNKNOWN'}
+                                    </small>
                                   </div>
-                                  <div className="progress" style={{ height: '8px' }}>
-                                    <div
-                                      className={`progress-bar ${getProgressBarClass(teamView.statistics.completion_percentage)}`}
-                                      style={{ width: `${teamView.statistics.completion_percentage}%` }}
-                                    ></div>
+                                  <div className="d-flex justify-content-between">
+                                    <small>Entries: {teamView.statistics.total_entries}</small>
+                                    <small>Completed: {teamView.statistics.completed_entries}</small>
                                   </div>
                                 </div>
                                 <div className="row text-center">
@@ -611,25 +597,6 @@ const TeamSubmissionTable = ({ sheetId }) => {
     return teamView?.response_count || 0;
   };
 
-  const getCompletionPercentage = (teamKey) => {
-    if (!teamData?.team_versions) return 0;
-    const teamView = teamData.team_versions.find(tv => tv.team_name.toLowerCase() === teamKey);
-    
-    // Calculate completion percentage based on assignment status
-    if (!teamView) return 0;
-    
-    switch (teamView.assignment_status?.toLowerCase()) {
-      case 'completed':
-        return 100;
-      case 'in_progress':
-        return teamView.response_count > 0 ? Math.min(75, (teamView.response_count / 100) * 100) : 25;
-      case 'assigned':
-        return teamView.response_count > 0 ? Math.min(50, (teamView.response_count / 100) * 100) : 10;
-      default:
-        return 0;
-    }
-  };
-
   const getLastUpdated = (teamKey) => {
     if (!teamData?.team_versions) return null;
     const teamView = teamData.team_versions.find(tv => tv.team_name.toLowerCase() === teamKey);
@@ -706,8 +673,7 @@ const TeamSubmissionTable = ({ sheetId }) => {
           <tr>
             <th>Team</th>
             <th>Status</th>
-            <th>Progress</th>
-            <th>Responses</th>
+            <th>Entries</th>
             <th>Last Updated</th>
             <th>Actions</th>
           </tr>
@@ -716,7 +682,6 @@ const TeamSubmissionTable = ({ sheetId }) => {
           {teams.map((team) => {
             const status = getSubmissionStatus(team.key);
             const responseCount = getResponseCount(team.key);
-            const completionPercentage = getCompletionPercentage(team.key);
             const lastUpdated = getLastUpdated(team.key);
             
             return (
@@ -731,14 +696,7 @@ const TeamSubmissionTable = ({ sheetId }) => {
                 </td>
                 <td>
                   <div className="d-flex align-items-center">
-                    <div className="progress me-2" style={{ width: '100px', height: '20px' }}>
-                      <div
-                        className={`progress-bar ${completionPercentage >= 100 ? 'bg-success' : completionPercentage > 0 ? 'bg-warning' : 'bg-secondary'}`}
-                        role="progressbar"
-                        style={{ width: `${Math.min(completionPercentage, 100)}%` }}
-                      ></div>
-                    </div>
-                    <small>{completionPercentage}%</small>
+                    <small>Entries: {responseCount}</small>
                   </div>
                 </td>
                 <td>

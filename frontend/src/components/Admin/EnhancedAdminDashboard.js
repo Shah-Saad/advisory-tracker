@@ -13,6 +13,7 @@ const EnhancedAdminDashboard = ({ user }) => {
     totalUsers: 0,
     totalVendors: 0,
     totalProducts: 0,
+    criticalRiskEntries: 0,
     highRiskEntries: 0,
     mediumRiskEntries: 0,
     lowRiskEntries: 0,
@@ -81,25 +82,27 @@ const EnhancedAdminDashboard = ({ user }) => {
       ]);
 
       // Calculate risk statistics from dashboard data or fallback to entries
-      let riskCounts = { high: 0, medium: 0, low: 0 };
+      let riskCounts = { critical: 0, high: 0, medium: 0, low: 0 };
       
       if (dashboardStats && dashboardStats.risks) {
         riskCounts = dashboardStats.risks.reduce((acc, risk) => {
           const level = risk.level?.toLowerCase();
-          if (level === 'high' || level === 'critical') acc.high += risk.count;
+          if (level === 'critical') acc.critical += risk.count;
+          else if (level === 'high') acc.high += risk.count;
           else if (level === 'medium') acc.medium += risk.count;
           else if (level === 'low') acc.low += risk.count;
           return acc;
-        }, { high: 0, medium: 0, low: 0 });
+        }, { critical: 0, high: 0, medium: 0, low: 0 });
       } else {
         // Fallback to old calculation
         riskCounts = entries.reduce((acc, entry) => {
           const risk = entry.risk_level?.toLowerCase();
-          if (risk === 'high' || risk === 'critical') acc.high++;
+          if (risk === 'critical') acc.critical++;
+          else if (risk === 'high') acc.high++;
           else if (risk === 'medium') acc.medium++;
           else if (risk === 'low') acc.low++;
           return acc;
-        }, { high: 0, medium: 0, low: 0 });
+        }, { critical: 0, high: 0, medium: 0, low: 0 });
       }
 
       const sheetStatusCounts = sheets.reduce((acc, sheet) => {
@@ -117,6 +120,7 @@ const EnhancedAdminDashboard = ({ user }) => {
         totalTeams: [...new Set(users.filter(u => u.team_name).map(u => u.team_name))].length,
         totalVendors: dashboardStats?.summary?.totalVendors || 0,
         totalProducts: dashboardStats?.summary?.totalProducts || 0,
+        criticalRiskEntries: riskCounts.critical,
         highRiskEntries: riskCounts.high,
         mediumRiskEntries: riskCounts.medium,
         lowRiskEntries: riskCounts.low,
@@ -233,7 +237,7 @@ const EnhancedAdminDashboard = ({ user }) => {
           <div className="section-header">
             <h3>Risk Overview</h3>
             <span className="status-badge healthy">
-              {stats.highRiskEntries + stats.mediumRiskEntries + stats.lowRiskEntries} Total
+              {stats.criticalRiskEntries + stats.highRiskEntries + stats.mediumRiskEntries + stats.lowRiskEntries} Total
             </span>
           </div>
           
@@ -249,6 +253,21 @@ const EnhancedAdminDashboard = ({ user }) => {
                 strokeWidth="4"
               />
               
+              {/* Critical Risk Slice */}
+              {stats.criticalRiskEntries > 0 && (
+                <circle
+                  cx="100"
+                  cy="100"
+                  r="35"
+                  fill="none"
+                  stroke="#dc3545"
+                  strokeWidth="70"
+                  strokeDasharray={`${(stats.criticalRiskEntries / (stats.criticalRiskEntries + stats.highRiskEntries + stats.mediumRiskEntries + stats.lowRiskEntries)) * 220} 220`}
+                  strokeDashoffset="0"
+                  transform="rotate(-90 100 100)"
+                />
+              )}
+              
               {/* High Risk Slice */}
               {stats.highRiskEntries > 0 && (
                 <circle
@@ -258,8 +277,8 @@ const EnhancedAdminDashboard = ({ user }) => {
                   fill="none"
                   stroke="#ff6b6b"
                   strokeWidth="70"
-                  strokeDasharray={`${(stats.highRiskEntries / (stats.highRiskEntries + stats.mediumRiskEntries + stats.lowRiskEntries)) * 220} 220`}
-                  strokeDashoffset="0"
+                  strokeDasharray={`${(stats.highRiskEntries / (stats.criticalRiskEntries + stats.highRiskEntries + stats.mediumRiskEntries + stats.lowRiskEntries)) * 220} 220`}
+                  strokeDashoffset={`-${(stats.criticalRiskEntries / (stats.criticalRiskEntries + stats.highRiskEntries + stats.mediumRiskEntries + stats.lowRiskEntries)) * 220}`}
                   transform="rotate(-90 100 100)"
                 />
               )}
@@ -273,8 +292,8 @@ const EnhancedAdminDashboard = ({ user }) => {
                   fill="none"
                   stroke="#feca57"
                   strokeWidth="70"
-                  strokeDasharray={`${(stats.mediumRiskEntries / (stats.highRiskEntries + stats.mediumRiskEntries + stats.lowRiskEntries)) * 220} 220`}
-                  strokeDashoffset={`-${(stats.highRiskEntries / (stats.highRiskEntries + stats.mediumRiskEntries + stats.lowRiskEntries)) * 220}`}
+                  strokeDasharray={`${(stats.mediumRiskEntries / (stats.criticalRiskEntries + stats.highRiskEntries + stats.mediumRiskEntries + stats.lowRiskEntries)) * 220} 220`}
+                  strokeDashoffset={`-${((stats.criticalRiskEntries + stats.highRiskEntries) / (stats.criticalRiskEntries + stats.highRiskEntries + stats.mediumRiskEntries + stats.lowRiskEntries)) * 220}`}
                   transform="rotate(-90 100 100)"
                 />
               )}
@@ -288,8 +307,8 @@ const EnhancedAdminDashboard = ({ user }) => {
                   fill="none"
                   stroke="#48dbfb"
                   strokeWidth="70"
-                  strokeDasharray={`${(stats.lowRiskEntries / (stats.highRiskEntries + stats.mediumRiskEntries + stats.lowRiskEntries)) * 220} 220`}
-                  strokeDashoffset={`-${((stats.highRiskEntries + stats.mediumRiskEntries) / (stats.highRiskEntries + stats.mediumRiskEntries + stats.lowRiskEntries)) * 220}`}
+                  strokeDasharray={`${(stats.lowRiskEntries / (stats.criticalRiskEntries + stats.highRiskEntries + stats.mediumRiskEntries + stats.lowRiskEntries)) * 220} 220`}
+                  strokeDashoffset={`-${((stats.criticalRiskEntries + stats.highRiskEntries + stats.mediumRiskEntries) / (stats.criticalRiskEntries + stats.highRiskEntries + stats.mediumRiskEntries + stats.lowRiskEntries)) * 220}`}
                   transform="rotate(-90 100 100)"
                 />
               )}
@@ -297,7 +316,7 @@ const EnhancedAdminDashboard = ({ user }) => {
               {/* Center text */}
               <text x="100" y="95" textAnchor="middle" className="pie-chart-center-text">
                 <tspan fontSize="24" fontWeight="bold" fill="#2d3748">
-                  {stats.highRiskEntries + stats.mediumRiskEntries + stats.lowRiskEntries}
+                  {stats.criticalRiskEntries + stats.highRiskEntries + stats.mediumRiskEntries + stats.lowRiskEntries}
                 </tspan>
               </text>
               <text x="100" y="110" textAnchor="middle" className="pie-chart-center-label">
@@ -309,6 +328,10 @@ const EnhancedAdminDashboard = ({ user }) => {
           {/* Risk Legend */}
           <div className="risk-legend">
             <div className="legend-item">
+              <div className="legend-color" style={{backgroundColor: '#dc3545'}}></div>
+              <span>Critical Risk ({stats.criticalRiskEntries})</span>
+            </div>
+            <div className="legend-item">
               <div className="legend-color" style={{backgroundColor: '#ff6b6b'}}></div>
               <span>High Risk ({stats.highRiskEntries})</span>
             </div>
@@ -319,38 +342,6 @@ const EnhancedAdminDashboard = ({ user }) => {
             <div className="legend-item">
               <div className="legend-color" style={{backgroundColor: '#48dbfb'}}></div>
               <span>Low Risk ({stats.lowRiskEntries})</span>
-            </div>
-          </div>
-        </div>
-
-        {/* System Health */}
-        <div className="system-health">
-          <div className="section-header">
-            <h3>System Health</h3>
-            <span className="status-badge healthy">
-              <i className="fas fa-check-circle me-1"></i>All Systems Operational
-            </span>
-          </div>
-          <div className="health-metrics">
-            <div className="health-item">
-              <span className="health-label">Database</span>
-              <span className="status-indicator healthy"></span>
-            </div>
-            <div className="health-item">
-              <span className="health-label">API Services</span>
-              <span className="status-indicator healthy"></span>
-            </div>
-            <div className="health-item">
-              <span className="health-label">Storage Usage</span>
-              <div className="progress-container">
-                <div className="progress-bar">
-                  <div 
-                    className="progress-fill" 
-                    style={{width: `${systemHealth.storageUsage}%`}}
-                  ></div>
-                </div>
-                <span className="progress-text">{systemHealth.storageUsage}%</span>
-              </div>
             </div>
           </div>
         </div>

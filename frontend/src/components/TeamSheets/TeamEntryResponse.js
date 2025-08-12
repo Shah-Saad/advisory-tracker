@@ -124,13 +124,12 @@ const TeamEntryResponse = ({ user }) => {
       entry.cve?.toLowerCase().includes(searchTerm.toLowerCase());
     
     const matchesStatus = statusFilter === 'all' || entry.status === statusFilter;
-    const matchesRisk = riskFilter === 'all' || entry.original_risk_level === riskFilter;
+    const matchesRisk = riskFilter === 'all' || entry.risk_level === riskFilter;
     
     return matchesSearch && matchesStatus && matchesRisk;
   });
 
   const completedEntries = entries.filter(e => ['completed', 'patched', 'closed'].includes(e.status?.toLowerCase()));
-  const progressPercentage = entries.length > 0 ? Math.round((completedEntries.length / entries.length) * 100) : 0;
 
   if (loading) {
     return (
@@ -151,7 +150,7 @@ const TeamEntryResponse = ({ user }) => {
         <div>
           <h1 className="h3 mb-0">Team Sheet Response</h1>
           <p className="text-muted">
-            Team: {user?.team?.name} | Progress: {progressPercentage}% ({completedEntries.length}/{entries.length})
+            Team: {user?.team?.name} | Progress: {completedEntries.length}/{entries.length} entries completed
           </p>
         </div>
         <div className="d-flex gap-2">
@@ -183,7 +182,7 @@ const TeamEntryResponse = ({ user }) => {
             <div 
               className="progress-bar bg-success" 
               role="progressbar" 
-              style={{ width: `${progressPercentage}%` }}
+              style={{ width: `${completedEntries.length / entries.length * 100}%` }}
             ></div>
           </div>
         </div>
@@ -322,8 +321,8 @@ const EntryRow = ({ entry, onStatusUpdate, onMarkCompleted, saving, getRiskBadge
           <code className="bg-light px-2 py-1 rounded">{entry.cve || 'N/A'}</code>
         </td>
         <td className="text-center">
-          <span className={getRiskBadgeClass(entry.original_risk_level)}>
-            {entry.original_risk_level || 'Unknown'}
+          <span className={getRiskBadgeClass(entry.risk_level)}>
+            {entry.risk_level || 'Unknown'}
           </span>
         </td>
         <td className="text-center">
