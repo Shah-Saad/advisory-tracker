@@ -29,20 +29,22 @@ const sheetController = {
       
       console.log('🔄 getTeamSheetData called with:', { id, teamKey });
       
-      // Map team key to team ID (using correct team IDs from database)
-      const teamMap = {
-        'generation': 44,
-        'distribution': 41,
-        'transmission': 42
-      };
+      // Get team ID from database based on team name/key
+      const db = require('../config/db');
+      const team = await db('teams')
+        .where('name', 'like', `%${teamKey}%`)
+        .orWhere('name', 'ilike', teamKey)
+        .first();
       
-      const teamId = teamMap[teamKey.toLowerCase()];
-      console.log('🔍 Mapped team key to ID:', { teamKey, teamId });
+      console.log('🔍 Found team:', team);
       
-      if (!teamId) {
-        console.log('❌ Invalid team key:', teamKey);
-        return res.status(400).json({ error: 'Invalid team key' });
+      if (!team) {
+        console.log('❌ Team not found for key:', teamKey);
+        return res.status(400).json({ error: 'Team not found' });
       }
+      
+      const teamId = team.id;
+      console.log('🔍 Using team ID:', { teamKey, teamId, teamName: team.name });
       
       console.log('📞 Calling SheetService.getTeamSheetData...');
       const teamData = await SheetService.getTeamSheetData(id, teamId);

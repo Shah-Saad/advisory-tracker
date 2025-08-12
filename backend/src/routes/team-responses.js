@@ -485,6 +485,7 @@ router.put('/admin/sheets/:sheetId/teams/:teamId/unlock', auth, async (req, res)
 
     // Create notification for the team about the unlock
     try {
+      // Create database notifications for team members (no email)
       const teamMembers = await db('users').where('team_id', teamId).select('id');
       
       for (const member of teamMembers) {
@@ -500,6 +501,31 @@ router.put('/admin/sheets/:sheetId/teams/:teamId/unlock', auth, async (req, res)
             unlocked_by: user.username,
             reason: reason,
             action: 'sheet_unlocked'
+          }
+        });
+      }
+
+      // Create notification for other admins about the unlock action
+      const otherAdmins = await db('users')
+        .join('roles', 'users.role_id', 'roles.id')
+        .where('roles.name', 'admin')
+        .where('users.id', '!=', userId)
+        .select('users.id');
+
+      for (const admin of otherAdmins) {
+        await NotificationService.createNotification({
+          user_id: userId, // The admin who performed the unlock
+          admin_id: admin.id, // The admin who should receive the notification
+          type: 'admin_sheet_unlocked',
+          title: 'Sheet Unlocked by Admin',
+          message: `${user.username} unlocked sheet for ${teamSheet.team_name} team. Reason: ${reason}`,
+          data: {
+            sheet_id: sheetId,
+            team_id: teamId,
+            team_name: teamSheet.team_name,
+            unlocked_by: user.username,
+            reason: reason,
+            action: 'admin_sheet_unlocked'
           }
         });
       }

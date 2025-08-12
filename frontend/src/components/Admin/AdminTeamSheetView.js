@@ -15,47 +15,52 @@ const AdminTeamSheetView = () => {
   const [sseConnected, setSseConnected] = useState(false);
   const [unlocking, setUnlocking] = useState(false);
   const intervalRef = useRef(null);
+  const hasLoadedRef = useRef(false);
 
-  const loadTeamSheetData = useCallback(async (silent = false) => {
+  // Filter states
+  const [filters, setFilters] = useState({
+    riskLevel: '',
+    deployedInKE: '',
+    vendorContacted: '',
+    searchTerm: ''
+  });
+  const [filteredResponses, setFilteredResponses] = useState([]);
+
+  const loadTeamSheetData = useCallback(async (showLoading = true) => {
     try {
-      console.log('🔄 loadTeamSheetData called with:', { sheetId, teamKey, silent });
-      
-      if (!silent) {
-        setLoading(true);
-        setError('');
-      } else {
+      if (showLoading) {
         setRefreshing(true);
+        setLoading(true);
       }
+      setError('');
       
-      // Fetch detailed team sheet data
-      console.log('📞 Calling sheetService.getAdminTeamSheetData...');
-      const detailedData = await sheetService.getAdminTeamSheetData(sheetId, teamKey);
-      console.log('✅ getAdminTeamSheetData response:', detailedData);
+      console.log('🔄 Loading team sheet data for:', { sheetId, teamKey });
+      const data = await sheetService.getAdminTeamSheetData(sheetId, teamKey);
+      console.log('✅ Team sheet data received:', data);
+      console.log('📊 Assignment status:', data.assignment_status);
+      console.log('📊 Assignment object:', data.assignment);
+      console.log('📊 Team name:', data.team_name);
+      console.log('📊 Responses count:', data.responses?.length);
+      console.log('📊 First response sample:', data.responses?.[0]);
       
-      setTeamData({
-        ...detailedData,
-        teamKey: teamKey,
-        teamName: teamKey.charAt(0).toUpperCase() + teamKey.slice(1)
-      });
-      
+      setTeamData(data);
       setLastUpdated(new Date());
-      
-    } catch (error) {
-      console.error('❌ Error fetching team sheet data:', error);
-      if (!silent) {
-        setError('Failed to load team sheet data: ' + (error.message || 'Unknown error'));
-      }
+      hasLoadedRef.current = true;
+    } catch (err) {
+      console.error('❌ Error loading team sheet data:', err);
+      setError(err.message || 'Failed to load team sheet data');
     } finally {
-      if (!silent) {
-        setLoading(false);
-      } else {
+      if (showLoading) {
         setRefreshing(false);
+        setLoading(false);
       }
     }
   }, [sheetId, teamKey]);
 
   useEffect(() => {
     console.log('🔄 AdminTeamSheetView useEffect triggered:', { sheetId, teamKey });
+    // Reset the loaded flag when sheetId or teamKey changes
+    hasLoadedRef.current = false;
     if (sheetId && teamKey) {
       loadTeamSheetData();
     }
@@ -64,15 +69,15 @@ const AdminTeamSheetView = () => {
   // Auto-refresh functionality
   useEffect(() => {
     let interval;
-    if (isAutoRefresh && teamData) {
+    if (isAutoRefresh) {
       interval = setInterval(() => {
-        loadTeamSheetData(true); // Use silent refresh
+        loadTeamSheetData(false); // Use silent refresh
       }, 30000); // Refresh every 30 seconds
     }
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [isAutoRefresh, teamData, loadTeamSheetData]);
+  }, [isAutoRefresh, loadTeamSheetData]);
 
   // Check for recent updates and highlight them
   const isRecentlyUpdated = (updatedAt) => {
@@ -101,8 +106,74 @@ const AdminTeamSheetView = () => {
     return new Date(dateString).toLocaleDateString();
   };
 
+  // Filter responses based on current filters
+  const applyFilters = useCallback(() => {
+    if (!teamData?.responses) {
+      setFilteredResponses([]);
+      return;
+    }
+
+    let filtered = [...teamData.responses];
+
+    // Filter by risk level
+    if (filters.riskLevel) {
+      filtered = filtered.filter(response => {
+        const riskLevel = response.risk_level || response.original_risk_level;
+        return riskLevel === filters.riskLevel;
+      });
+    }
+
+    // Filter by deployed in KE
+    if (filters.deployedInKE) {
+      filtered = filtered.filter(response => response.deployed_in_ke === filters.deployedInKE);
+    }
+
+    // Filter by vendor contacted
+    if (filters.vendorContacted) {
+      filtered = filtered.filter(response => response.vendor_contacted === filters.vendorContacted);
+    }
+
+    // Filter by search term
+    if (filters.searchTerm) {
+      const searchLower = filters.searchTerm.toLowerCase();
+      filtered = filtered.filter(response => 
+        (response.product_name && response.product_name.toLowerCase().includes(searchLower)) ||
+        (response.vendor_name && response.vendor_name.toLowerCase().includes(searchLower)) ||
+        (response.oem_vendor && response.oem_vendor.toLowerCase().includes(searchLower)) ||
+        (response.cve && response.cve.toLowerCase().includes(searchLower)) ||
+        (response.site && response.site.toLowerCase().includes(searchLower)) ||
+        (response.comments && response.comments.toLowerCase().includes(searchLower))
+      );
+    }
+
+    setFilteredResponses(filtered);
+  }, [teamData?.responses, filters]);
+
+  // Apply filters when data or filters change
+  useEffect(() => {
+    applyFilters();
+  }, [applyFilters]);
+
+  // Handle filter changes
+  const handleFilterChange = (filterType, value) => {
+    setFilters(prev => ({
+      ...prev,
+      [filterType]: value
+    }));
+  };
+
+  // Clear all filters
+  const clearFilters = () => {
+    setFilters({
+      riskLevel: '',
+      deployedInKE: '',
+      vendorContacted: '',
+      searchTerm: ''
+    });
+  };
+
   const handleUnlockSheet = async () => {
-    if (!window.confirm(`Are you sure you want to unlock this sheet for ${teamData.teamName}? This will reset the sheet status from completed back to in-progress, allowing the team to continue working on it.`)) {
+    if (!window.confirm(`Are you sure you want to unlock this sheet for ${teamData.team_name || teamData.teamName}? This will reset the sheet status from completed back to in-progress, allowing the team to continue working on it.`)) {
       return;
     }
 
@@ -181,7 +252,7 @@ const AdminTeamSheetView = () => {
           <div className="d-flex justify-content-between align-items-center mb-4">
             <div>
               <h1 className="h3 mb-0">
-                {teamData.teamName} Team - Live Sheet View
+                {teamData.team_name || teamData.teamName} Team - Live Sheet View
                 {refreshing && (
                   <span className="ms-2">
                     <div className="spinner-border spinner-border-sm text-primary" role="status">
@@ -305,6 +376,16 @@ const AdminTeamSheetView = () => {
                       </button>
                     )}
                   </p>
+                  
+                  {/* Debug information */}
+                  <div className="mt-2 small text-muted">
+                    <strong>Debug Info:</strong> 
+                    Assignment Status: {teamData.assignment_status || 'Unknown'} | 
+                    Assignment Object Status: {teamData.assignment?.status || 'Unknown'} | 
+                    Is Completed: {teamData.assignment_status === 'completed' ? 'Yes' : 'No'} | 
+                    Unlocking: {unlocking ? 'Yes' : 'No'}
+                  </div>
+                  
                   <p><strong>Total Responses:</strong> {teamData.responses?.length || 0}</p>
                   <p><strong>Assigned At:</strong> {teamData.assigned_at ? formatDate(teamData.assigned_at) : 'N/A'}</p>
                   <p><strong>Submitted At:</strong> {teamData.submitted_at ? formatDate(teamData.submitted_at) : 'Not submitted'}</p>
@@ -317,7 +398,16 @@ const AdminTeamSheetView = () => {
           <div className="card">
             <div className="card-header">
               <div className="d-flex justify-content-between align-items-center">
-                <h6 className="mb-0">Live Team Responses ({teamData.responses?.length || 0})</h6>
+                <h6 className="mb-0">
+                  Live Team Responses 
+                  {filters.searchTerm || filters.riskLevel || filters.deployedInKE || filters.vendorContacted ? (
+                    <span className="text-muted">
+                      ({filteredResponses.length} of {teamData.responses?.length || 0})
+                    </span>
+                  ) : (
+                    <span>({teamData.responses?.length || 0})</span>
+                  )}
+                </h6>
                 <div className="d-flex align-items-center gap-2">
                   <small className="text-muted">
                     <i className="fas fa-circle text-success" style={{fontSize: '8px'}}></i>
@@ -329,153 +419,242 @@ const AdminTeamSheetView = () => {
             </div>
             <div className="card-body">
               {teamData.responses && teamData.responses.length > 0 ? (
-                <div className="table-responsive">
-                  <table className="table table-hover">
-                    <thead>
-                      <tr>
-                        <th>Product Name</th>
-                        <th>Vendor</th>
-                        <th>Source</th>
-                        <th>Risk Level</th>
-                        <th>CVE</th>
-                        <th>Deployed in KE?</th>
-                        <th>Location/Site</th>
-                        <th>Status</th>
-                        <th>Vendor Contacted</th>
-                        <th>Patching</th>
-                        <th>Compensatory Controls</th>
-                        <th>Comments</th>
-                        <th>Updated</th>
-                      </tr>
-                      <tr>
-                        <th></th>
-                        <th></th>
-                        <th></th>
-                        <th></th>
-                        <th></th>
-                        <th></th>
-                        <th></th>
-                        <th></th>
-                        <th></th>
-                        <th style={{textAlign: 'center'}}>
-                          <div className="d-flex justify-content-around">
-                            <small>Est. Release Date</small>
-                            <small>Implementation Date</small>
-                          </div>
-                        </th>
-                        <th></th>
-                        <th></th>
-                        <th></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {teamData.responses.map((response, index) => (
-                        <tr key={response.id || index} className={`${getEntryStatusColor(response)} ${isRecentlyUpdated(response.updated_at) ? 'border-primary border-2' : ''}`}>
-                          <td>
-                            <small>{response.product_name || 'N/A'}</small>
-                            {isRecentlyUpdated(response.updated_at) && (
-                              <span className="badge bg-primary ms-1" style={{fontSize: '10px'}}>
-                                <i className="fas fa-clock"></i> Updated
-                              </span>
-                            )}
-                          </td>
-                          <td>
-                            <small>{response.vendor_name || response.oem_vendor || 'N/A'}</small>
-                          </td>
-                          <td>
-                            {response.source ? (
-                              <a href={response.source} target="_blank" rel="noopener noreferrer" className="text-primary">
-                                <small>{response.source.includes('cisa.gov') ? 'CISA Advisory' : 'Source Link'}</small>
-                              </a>
-                            ) : (
-                              <small className="text-muted">N/A</small>
-                            )}
-                          </td>
-                          <td>
-                            <span className={`badge ${
-                              response.risk_level === 'Critical' ? 'bg-danger' :
-                              response.risk_level === 'High' ? 'bg-warning text-dark' :
-                              response.risk_level === 'Medium' ? 'bg-info text-dark' :
-                              response.risk_level === 'Low' ? 'bg-success' : 'bg-secondary'
-                            }`}>
-                              {response.risk_level || 'Unknown'}
-                            </span>
-                          </td>
-                          <td>
-                            <small>{response.cve || 'N/A'}</small>
-                          </td>
-                          <td>
-                            <span className={`badge ${response.deployed_in_ke === 'Y' ? 'bg-success' : 'bg-secondary'}`}>
-                              {response.deployed_in_ke === 'Y' ? 'Yes' : 'No'}
-                            </span>
-                          </td>
-                          <td>
-                            <small>{response.deployed_in_ke === 'Y' ? (response.site || 'N/A') : 'N/A'}</small>
-                          </td>
-                          <td>
-                            <small>{response.deployed_in_ke === 'Y' ? (response.current_status || 'N/A') : 'N/A'}</small>
-                          </td>
-                          <td>
-                            <small>{response.deployed_in_ke === 'Y' ? (response.vendor_contacted || 'N/A') : 'N/A'}</small>
-                            {response.deployed_in_ke === 'Y' && response.vendor_contacted === 'Y' && response.vendor_contact_date && (
-                              <div><small className="text-muted">Contact Date: {formatDate(response.vendor_contact_date)}</small></div>
-                            )}
-                          </td>
-                          <td>
-                            <div className="d-flex gap-1">
-                              <div className="flex-fill">
-                                {response.deployed_in_ke === 'Y' && response.patching_est_release_date ? (
-                                  <small>{formatDate(response.patching_est_release_date)}</small>
-                                ) : (
-                                  <small className="text-muted">N/A</small>
-                                )}
-                              </div>
-                              <div className="flex-fill">
-                                {response.deployed_in_ke === 'Y' && response.implementation_date ? (
-                                  <small>{formatDate(response.implementation_date)}</small>
-                                ) : (
-                                  <small className="text-muted">N/A</small>
-                                )}
-                              </div>
-                            </div>
-                          </td>
-                          <td>
-                            <small>{response.deployed_in_ke === 'Y' ? (response.compensatory_controls_provided || 'N/A') : 'N/A'}</small>
-                            {response.deployed_in_ke === 'Y' && response.compensatory_controls_provided === 'Y' && response.compensatory_controls_details && (
-                              <div><small className="text-muted">{response.compensatory_controls_details}</small></div>
-                            )}
-                          </td>
-                          <td>
-                            {response.comments ? (
-                              <span title={response.comments}>
-                                {response.comments.length > 50 ? 
-                                  response.comments.substring(0, 50) + '...' : 
-                                  response.comments}
-                              </span>
-                            ) : (
-                              <span className="text-muted">No comments</span>
-                            )}
-                          </td>
-                          <td>
-                            <small>{formatDate(response.updated_at) || 'N/A'}</small>
-                            {isRecentlyUpdated(response.updated_at) && (
-                              <div>
-                                <small className="text-primary">
-                                  <i className="fas fa-pulse"></i> {formatTimeAgo(new Date(response.updated_at))}
-                                </small>
-                              </div>
-                            )}
-                          </td>
+                <>
+                  {/* Filters Section */}
+                  <div className="mb-4">
+                    <div className="row g-3">
+                      <div className="col-md-3">
+                        <label className="form-label small">Search</label>
+                        <input
+                          type="text"
+                          className="form-control form-control-sm"
+                          placeholder="Search products, vendors, CVE..."
+                          value={filters.searchTerm}
+                          onChange={(e) => handleFilterChange('searchTerm', e.target.value)}
+                        />
+                      </div>
+                      <div className="col-md-2">
+                        <label className="form-label small">Risk Level</label>
+                        <select
+                          className="form-select form-select-sm"
+                          value={filters.riskLevel}
+                          onChange={(e) => handleFilterChange('riskLevel', e.target.value)}
+                        >
+                          <option value="">All Risk Levels</option>
+                          <option value="Critical">Critical</option>
+                          <option value="High">High</option>
+                          <option value="Medium">Medium</option>
+                          <option value="Low">Low</option>
+                        </select>
+                      </div>
+                      <div className="col-md-2">
+                        <label className="form-label small">Deployed in KE</label>
+                        <select
+                          className="form-select form-select-sm"
+                          value={filters.deployedInKE}
+                          onChange={(e) => handleFilterChange('deployedInKE', e.target.value)}
+                        >
+                          <option value="">All</option>
+                          <option value="Y">Yes</option>
+                          <option value="N">No</option>
+                        </select>
+                      </div>
+                      <div className="col-md-2">
+                        <label className="form-label small">Vendor Contacted</label>
+                        <select
+                          className="form-select form-select-sm"
+                          value={filters.vendorContacted}
+                          onChange={(e) => handleFilterChange('vendorContacted', e.target.value)}
+                        >
+                          <option value="">All</option>
+                          <option value="Y">Yes</option>
+                          <option value="N">No</option>
+                        </select>
+                      </div>
+                      <div className="col-md-3 d-flex align-items-end">
+                        <button
+                          className="btn btn-outline-secondary btn-sm me-2"
+                          onClick={clearFilters}
+                        >
+                          <i className="fas fa-times me-1"></i>
+                          Clear Filters
+                        </button>
+                        <span className="text-muted small">
+                          Showing {filteredResponses.length} of {teamData.responses.length} entries
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="table-responsive">
+                    <table className="table table-hover">
+                      <thead>
+                        <tr>
+                          <th>Product Name</th>
+                          <th>Vendor</th>
+                          <th>Source</th>
+                          <th>Risk Level</th>
+                          <th>CVE</th>
+                          <th>Deployed in KE?</th>
+                          <th>Location/Site</th>
+                          <th>Status</th>
+                          <th>Vendor Contacted</th>
+                          <th>Patching</th>
+                          <th>Compensatory Controls</th>
+                          <th>Comments</th>
+                          <th>Updated</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                        <tr>
+                          <th></th>
+                          <th></th>
+                          <th></th>
+                          <th></th>
+                          <th></th>
+                          <th></th>
+                          <th></th>
+                          <th></th>
+                          <th></th>
+                          <th style={{textAlign: 'center'}}>
+                            <div className="d-flex justify-content-around">
+                              <small>Est. Release Date</small>
+                              <small>Implementation Date</small>
+                            </div>
+                          </th>
+                          <th></th>
+                          <th></th>
+                          <th></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredResponses.map((response, index) => (
+                          <tr key={response.id || index} className={`${getEntryStatusColor(response)} ${isRecentlyUpdated(response.updated_at) ? 'border-primary border-2' : ''}`}>
+                            <td>
+                              <small>{response.product_name || 'N/A'}</small>
+                              {isRecentlyUpdated(response.updated_at) && (
+                                <span className="badge bg-primary ms-1" style={{fontSize: '10px'}}>
+                                  <i className="fas fa-clock"></i> Updated
+                                </span>
+                              )}
+                            </td>
+                            <td>
+                              <small>{response.vendor_name || response.oem_vendor || 'N/A'}</small>
+                            </td>
+                            <td>
+                              {response.source ? (
+                                <a href={response.source} target="_blank" rel="noopener noreferrer" className="text-primary">
+                                  <small>{response.source.includes('cisa.gov') ? 'CISA Advisory' : 'Source Link'}</small>
+                                </a>
+                              ) : (
+                                <small className="text-muted">N/A</small>
+                              )}
+                            </td>
+                            <td>
+                              <span className={`badge ${
+                                response.risk_level === 'Critical' ? 'bg-danger' :
+                                response.risk_level === 'High' ? 'bg-warning text-dark' :
+                                response.risk_level === 'Medium' ? 'bg-info text-dark' :
+                                response.risk_level === 'Low' ? 'bg-success' : 
+                                response.original_risk_level === 'Critical' ? 'bg-danger' :
+                                response.original_risk_level === 'High' ? 'bg-warning text-dark' :
+                                response.original_risk_level === 'Medium' ? 'bg-info text-dark' :
+                                response.original_risk_level === 'Low' ? 'bg-success' : 'bg-secondary'
+                              }`}>
+                                {response.risk_level || response.original_risk_level || 'N/A'}
+                              </span>
+                            </td>
+                            <td>
+                              <small>{response.cve || 'N/A'}</small>
+                            </td>
+                            <td>
+                              <span className={`badge ${response.deployed_in_ke === 'Y' ? 'bg-success' : 'bg-secondary'}`}>
+                                {response.deployed_in_ke === 'Y' ? 'Yes' : 'No'}
+                              </span>
+                            </td>
+                            <td>
+                              <small>{response.deployed_in_ke === 'Y' ? (response.site || 'N/A') : 'N/A'}</small>
+                            </td>
+                            <td>
+                              <small>{response.deployed_in_ke === 'Y' ? (response.current_status || 'N/A') : 'N/A'}</small>
+                            </td>
+                            <td>
+                              <small>{response.deployed_in_ke === 'Y' ? (response.vendor_contacted || 'N/A') : 'N/A'}</small>
+                              {response.deployed_in_ke === 'Y' && response.vendor_contacted === 'Y' && response.vendor_contact_date && (
+                                <div><small className="text-muted">Contact Date: {formatDate(response.vendor_contact_date)}</small></div>
+                              )}
+                            </td>
+                            <td>
+                              <div className="d-flex gap-1">
+                                <div className="flex-fill">
+                                  {response.deployed_in_ke === 'Y' && response.patching_est_release_date ? (
+                                    <small>{formatDate(response.patching_est_release_date)}</small>
+                                  ) : (
+                                    <small className="text-muted">N/A</small>
+                                  )}
+                                </div>
+                                <div className="flex-fill">
+                                  {response.deployed_in_ke === 'Y' && response.implementation_date ? (
+                                    <small>{formatDate(response.implementation_date)}</small>
+                                  ) : (
+                                    <small className="text-muted">N/A</small>
+                                  )}
+                                </div>
+                              </div>
+                            </td>
+                            <td>
+                              <small>{response.deployed_in_ke === 'Y' ? (response.compensatory_controls_provided || 'N/A') : 'N/A'}</small>
+                              {response.deployed_in_ke === 'Y' && response.compensatory_controls_provided === 'Y' && response.compensatory_controls_details && (
+                                <div><small className="text-muted">{response.compensatory_controls_details}</small></div>
+                              )}
+                            </td>
+                            <td>
+                              {response.comments ? (
+                                <span title={response.comments}>
+                                  {response.comments.length > 50 ? 
+                                    response.comments.substring(0, 50) + '...' : 
+                                    response.comments}
+                                </span>
+                              ) : (
+                                <span className="text-muted">No comments</span>
+                              )}
+                            </td>
+                            <td>
+                              <small>{formatDate(response.updated_at) || 'N/A'}</small>
+                              {isRecentlyUpdated(response.updated_at) && (
+                                <div>
+                                  <small className="text-primary">
+                                    <i className="fas fa-pulse"></i> {formatTimeAgo(new Date(response.updated_at))}
+                                  </small>
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
               ) : (
                 <div className="text-center py-4">
                   <i className="fas fa-inbox fa-3x text-muted mb-3"></i>
-                  <h5>No Responses Yet</h5>
-                  <p className="text-muted">This team hasn't submitted any responses for this sheet.</p>
+                  <h5>
+                    {filters.searchTerm || filters.riskLevel || filters.deployedInKE || filters.vendorContacted 
+                      ? 'No Matching Responses' 
+                      : 'No Responses Yet'}
+                  </h5>
+                  <p className="text-muted">
+                    {filters.searchTerm || filters.riskLevel || filters.deployedInKE || filters.vendorContacted
+                      ? 'No responses match your current filters. Try adjusting your search criteria.'
+                      : 'This team hasn\'t submitted any responses for this sheet.'}
+                  </p>
+                  {(filters.searchTerm || filters.riskLevel || filters.deployedInKE || filters.vendorContacted) && (
+                    <button 
+                      className="btn btn-outline-secondary btn-sm"
+                      onClick={clearFilters}
+                    >
+                      <i className="fas fa-times me-1"></i>
+                      Clear Filters
+                    </button>
+                  )}
                 </div>
               )}
             </div>

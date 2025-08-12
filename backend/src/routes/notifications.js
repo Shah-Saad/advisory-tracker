@@ -5,34 +5,18 @@ const { auth } = require('../middlewares/auth');
 
 /**
  * @route GET /api/notifications
- * @desc Get notifications for the logged-in admin
- * @access Private (Admin only)
+ * @desc Get notifications for the logged-in user
+ * @access Private
  */
 router.get('/', auth, async (req, res) => {
     try {
-        // Only admins can access notifications
-        if (req.user.role !== 'admin') {
-            return res.status(403).json({ 
-                message: 'Access denied. Admin access required.' 
-            });
-        }
-
         const page = parseInt(req.query.page) || 1;
         const limit = parseInt(req.query.limit) || 20;
-        const unreadOnly = req.query.unread === 'true';
 
-        let notifications;
-        if (unreadOnly) {
-            notifications = await NotificationService.getUnreadNotifications(req.user.id);
-        } else {
-            notifications = await NotificationService.getRecentNotifications(req.user.id, limit);
-        }
+        // Get notifications for the user
+        const notifications = await NotificationService.getUserNotifications(req.user.id, limit);
 
-        res.json({
-            message: 'Notifications retrieved successfully',
-            data: notifications,
-            count: notifications.length
-        });
+        res.json(notifications);
     } catch (error) {
         console.error('Error getting notifications:', error);
         res.status(500).json({ 
@@ -43,27 +27,18 @@ router.get('/', auth, async (req, res) => {
 });
 
 /**
- * @route GET /api/notifications/stats
- * @desc Get notification statistics for admin
- * @access Private (Admin only)
+ * @route GET /api/notifications/unread-count
+ * @desc Get unread notification count for the user
+ * @access Private
  */
-router.get('/stats', auth, async (req, res) => {
+router.get('/unread-count', auth, async (req, res) => {
     try {
-        if (req.user.role !== 'admin') {
-            return res.status(403).json({ 
-                message: 'Access denied. Admin access required.' 
-            });
-        }
-
-        const stats = await NotificationService.getNotificationStats(req.user.id);
-        res.json({
-            message: 'Notification stats retrieved successfully',
-            data: stats
-        });
+        const count = await NotificationService.getUnreadCount(req.user.id);
+        res.json({ count });
     } catch (error) {
-        console.error('Error getting notification stats:', error);
+        console.error('Error getting unread count:', error);
         res.status(500).json({ 
-            message: 'Failed to retrieve notification stats', 
+            message: 'Failed to retrieve unread count', 
             error: error.message 
         });
     }
@@ -71,27 +46,21 @@ router.get('/stats', auth, async (req, res) => {
 
 /**
  * @route PUT /api/notifications/:id/read
- * @desc Delete a notification (remove when marked as read)
- * @access Private (Admin only)
+ * @desc Mark a notification as read
+ * @access Private
  */
 router.put('/:id/read', auth, async (req, res) => {
     try {
-        if (req.user.role !== 'admin') {
-            return res.status(403).json({ 
-                message: 'Access denied. Admin access required.' 
-            });
-        }
-
         const { id } = req.params;
-        await NotificationService.deleteNotification(id);
+        await NotificationService.markAsRead(id, req.user.id);
         
         res.json({
-            message: 'Notification removed'
+            message: 'Notification marked as read'
         });
     } catch (error) {
-        console.error('Error removing notification:', error);
+        console.error('Error marking notification as read:', error);
         res.status(500).json({ 
-            message: 'Failed to remove notification', 
+            message: 'Failed to mark notification as read', 
             error: error.message 
         });
     }
@@ -99,24 +68,18 @@ router.put('/:id/read', auth, async (req, res) => {
 
 /**
  * @route PUT /api/notifications/read-all
- * @desc Delete all notifications for the admin (remove when marked as read)
- * @access Private (Admin only)
+ * @desc Mark all notifications as read for the user
+ * @access Private
  */
 router.put('/read-all', auth, async (req, res) => {
     try {
-        if (req.user.role !== 'admin') {
-            return res.status(403).json({ 
-                message: 'Access denied. Admin access required.' 
-            });
-        }
-
-        await NotificationService.deleteAllNotifications(req.user.id);
+        await NotificationService.markAllAsRead(req.user.id);
         
         res.json({
-            message: 'All notifications removed'
+            message: 'All notifications marked as read'
         });
     } catch (error) {
-        console.error('Error removing all notifications:', error);
+        console.error('Error marking all notifications as read:', error);
         res.status(500).json({ 
             message: 'Failed to mark all notifications as read', 
             error: error.message 
@@ -125,29 +88,22 @@ router.put('/read-all', auth, async (req, res) => {
 });
 
 /**
- * @route GET /api/notifications/unread
- * @desc Get only unread notifications for admin
- * @access Private (Admin only)
+ * @route DELETE /api/notifications/:id
+ * @desc Delete a specific notification
+ * @access Private
  */
-router.get('/unread', auth, async (req, res) => {
+router.delete('/:id', auth, async (req, res) => {
     try {
-        if (req.user.role !== 'admin') {
-            return res.status(403).json({ 
-                message: 'Access denied. Admin access required.' 
-            });
-        }
-
-        const notifications = await NotificationService.getUnreadNotifications(req.user.id);
+        const { id } = req.params;
+        await NotificationService.deleteNotification(id, req.user.id);
         
         res.json({
-            message: 'Unread notifications retrieved successfully',
-            data: notifications,
-            count: notifications.length
+            message: 'Notification deleted successfully'
         });
     } catch (error) {
-        console.error('Error getting unread notifications:', error);
+        console.error('Error deleting notification:', error);
         res.status(500).json({ 
-            message: 'Failed to retrieve unread notifications', 
+            message: 'Failed to delete notification', 
             error: error.message 
         });
     }

@@ -4,6 +4,7 @@ const TeamSheet = require('../models/TeamSheet');
 const SheetResponse = require('../models/SheetResponse');
 const SheetResponseService = require('./SheetResponseService');
 const FileProcessingService = require('./FileProcessingService');
+const NotificationService = require('./NotificationService'); // Added NotificationService import
 
 class SheetService {
   static async getAllSheets() {
@@ -354,6 +355,44 @@ class SheetService {
     const SheetResponseService = require('./SheetResponseService');
     await SheetResponseService.markTeamSheetCompleted(sheetId, teamId, userId);
     console.log('✅ Marked sheet as completed and created notifications');
+
+    // Create additional notification for sheet submission
+    try {
+      const team = await db('teams').where('id', teamId).first();
+      const sheet = await db('sheets').where('id', sheetId).first();
+      const user = await db('users').where('id', userId).first();
+      
+      if (team && sheet && user) {
+        // Get all admin users and create notifications for each
+        const admins = await db('users')
+          .join('roles', 'users.role_id', 'roles.id')
+          .where('roles.name', 'admin')
+          .select('users.id');
+
+        for (const admin of admins) {
+          await NotificationService.createNotification({
+            user_id: userId,
+            admin_id: admin.id,
+            type: 'sheet_submitted',
+            title: 'Sheet Submitted Successfully',
+            message: `${user.username || user.email} from ${team.name} team has submitted sheet "${sheet.title}" with ${responsesArray.length} responses`,
+            data: {
+              sheet_id: sheetId,
+              team_id: teamId,
+              team_name: team.name,
+              sheet_title: sheet.title,
+              submitted_by: user.username || user.email,
+              response_count: responsesArray.length,
+              action: 'sheet_submitted'
+            }
+          });
+        }
+        console.log(`✅ Created sheet submission notifications for ${admins.length} admins`);
+      }
+    } catch (notificationError) {
+      console.error('❌ Failed to create sheet submission notification:', notificationError);
+      // Don't fail the request if notification fails
+    }
 
     return { message: 'Sheet submitted successfully' };
   }

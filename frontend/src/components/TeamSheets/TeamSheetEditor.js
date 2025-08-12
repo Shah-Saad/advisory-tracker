@@ -82,7 +82,43 @@ const TeamSheetEditor = () => {
 
   // Timer effect for submit button availability
   useEffect(() => {
-    if (!sheet || !sheet.assigned_at) return;
+    if (!sheet) return;
+
+    console.log('🔍 Submit button debug:', {
+      sheet: sheet,
+      assigned_at: sheet.assigned_at,
+      assignment_status: sheet.assignment_status,
+      status: sheet.status
+    });
+
+    // Fallback: Enable submit after 2 minutes regardless of other conditions
+    const fallbackTimer = setTimeout(() => {
+      setSubmitEnabled(true);
+      setTimeRemaining(0);
+      console.log('✅ Fallback: Submit button enabled after 2 minutes');
+    }, 120000); // 2 minutes
+
+    // If no assigned_at, enable submit after 1 minute from now
+    if (!sheet.assigned_at) {
+      const oneMinuteFromNow = new Date(Date.now() + 60 * 1000);
+      const timer = setInterval(() => {
+        const now = new Date();
+        if (now >= oneMinuteFromNow) {
+          setSubmitEnabled(true);
+          setTimeRemaining(0);
+          clearInterval(timer);
+          clearTimeout(fallbackTimer);
+        } else {
+          const remaining = Math.ceil((oneMinuteFromNow - now) / 1000);
+          setTimeRemaining(remaining);
+          setSubmitEnabled(false);
+        }
+      }, 1000);
+      return () => {
+        clearInterval(timer);
+        clearTimeout(fallbackTimer);
+      };
+    }
 
     const assignedTime = new Date(sheet.assigned_at);
     const now = new Date();
@@ -93,6 +129,7 @@ const TeamSheetEditor = () => {
       // More than 1 minute has passed
       setSubmitEnabled(true);
       setTimeRemaining(0);
+      clearTimeout(fallbackTimer);
     } else {
       // Less than 1 minute has passed, start countdown
       const remaining = oneMinuteMs - timeElapsed;
@@ -108,13 +145,17 @@ const TeamSheetEditor = () => {
           setSubmitEnabled(true);
           setTimeRemaining(0);
           clearInterval(timer);
+          clearTimeout(fallbackTimer);
         } else {
           const currentRemaining = oneMinuteMs - currentElapsed;
           setTimeRemaining(Math.ceil(currentRemaining / 1000));
         }
       }, 1000);
 
-      return () => clearInterval(timer);
+      return () => {
+        clearInterval(timer);
+        clearTimeout(fallbackTimer);
+      };
     }
   }, [sheet]);
 
@@ -445,7 +486,7 @@ const TeamSheetEditor = () => {
               <button 
                 className={`btn ${submitEnabled ? 'btn-success' : 'btn-secondary'}`}
                 onClick={handleSubmitSheet}
-                disabled={submitting || sheet.assignment_status === 'completed' || !submitEnabled}
+                disabled={submitting || !submitEnabled}
                 title={!submitEnabled ? `Submit will be available in ${timeRemaining} seconds` : 'Submit your completed sheet'}
               >
                 <i className="fas fa-paper-plane me-1"></i>
@@ -453,6 +494,17 @@ const TeamSheetEditor = () => {
                  !submitEnabled ? `Wait ${timeRemaining}s` : 
                  'Submit Sheet'}
               </button>
+            </div>
+            
+            {/* Debug information */}
+            <div className="mt-2 small text-muted">
+              <strong>Debug Info:</strong> 
+              Submit Enabled: {submitEnabled ? 'Yes' : 'No'} | 
+              Time Remaining: {timeRemaining}s | 
+              Assignment Status: {sheet?.assignment_status || 'Unknown'} | 
+              Sheet Status: {sheet?.status || 'Unknown'} | 
+              Assigned At: {sheet?.assigned_at || 'Not set'} | 
+              Submitting: {submitting ? 'Yes' : 'No'}
             </div>
           </div>
 
@@ -572,13 +624,13 @@ const TeamSheetEditor = () => {
                         {/* Risk Level */}
                         <td>
                           <span className={`badge ${
-                            entry.risk_level === 'Critical' ? 'bg-danger' :
-                            entry.risk_level === 'High' ? 'bg-warning text-dark' :
-                            entry.risk_level === 'Medium' ? 'bg-info' :
-                            entry.risk_level === 'Low' ? 'bg-success' :
+                            entry.original_risk_level === 'Critical' ? 'bg-danger' :
+                            entry.original_risk_level === 'High' ? 'bg-warning text-dark' :
+                            entry.original_risk_level === 'Medium' ? 'bg-info' :
+                            entry.original_risk_level === 'Low' ? 'bg-success' :
                             'bg-secondary'
                           }`} style={{fontSize: '0.75rem'}}>
-                            {entry.risk_level || 'N/A'}
+                            {entry.original_risk_level || 'N/A'}
                           </span>
                         </td>
                         
