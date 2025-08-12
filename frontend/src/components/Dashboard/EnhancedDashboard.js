@@ -538,7 +538,7 @@ const EnhancedDashboard = ({ user }) => {
                     <i className="fas fa-clock text-warning me-2"></i>
                     Recent Entries
                   </h5>
-                  <Link to="/entries" className="btn btn-outline-primary btn-sm">
+                  <Link to="/entries" className="btn btn-brand btn-sm text-white">
                     <i className="fas fa-external-link-alt me-1"></i>View All
                   </Link>
                 </div>
@@ -617,7 +617,7 @@ const EnhancedDashboard = ({ user }) => {
                   {user?.role === 'admin' ? (
                     <>
                       <div className="col-md-4">
-                        <Link to="/upload" className="btn btn-outline-primary btn-lg w-100 h-100 d-flex flex-column align-items-center justify-content-center text-decoration-none">
+                        <Link to="/upload" className="btn btn-brand btn-lg w-100 h-100 d-flex flex-column align-items-center justify-content-center text-decoration-none text-white">
                           <i className="fas fa-cloud-upload-alt fa-2x mb-2"></i>
                           <span className="fw-semibold">Upload Sheet</span>
                           <small className="text-muted">Add new entries</small>
@@ -641,7 +641,7 @@ const EnhancedDashboard = ({ user }) => {
                   ) : (
                     <>
                       <div className="col-md-6">
-                        <Link to="/my-sheets" className="btn btn-outline-primary btn-lg w-100 h-100 d-flex flex-column align-items-center justify-content-center text-decoration-none">
+                        <Link to="/my-sheets" className="btn btn-brand btn-lg w-100 h-100 d-flex flex-column align-items-center justify-content-center text-decoration-none text-white">
                           <i className="fas fa-clipboard-list fa-2x mb-2"></i>
                           <span className="fw-semibold">My Sheets</span>
                           <small className="text-muted">View assigned sheets</small>

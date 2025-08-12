@@ -167,7 +167,7 @@ const TeamSheetEditor = () => {
         throw new Error('Response not found');
       }
       
-      // Update the team response
+      // Update the team response via general update endpoint (save draft)
       await sheetService.updateTeamResponse(response.id, responseData);
       setLastSaved(new Date());
       console.log(`✅ Auto-saved team response ${entryId} successfully`);
@@ -296,26 +296,16 @@ const TeamSheetEditor = () => {
 
   const handleSaveDraft = async () => {
     try {
-      // Update each entry individually with cache-busting
+      // Persist each team response record (not original entry)
       for (const entryId in responses) {
-        const responseData = {
-          ...responses[entryId],
-          _timestamp: Date.now() // Add cache-busting timestamp
-        };
-        console.log(`Saving draft for entry ${entryId}:`, responseData);
-        
-        // Log specific date fields
-        const dateFields = ['vendor_contact_date', 'patching_est_release_date', 'implementation_date'];
-        dateFields.forEach(field => {
-          if (responseData[field]) {
-            console.log(`  ${field}: "${responseData[field]}" (type: ${typeof responseData[field]})`);
-          }
-        });
-        
-        await sheetService.updateEntry(entryId, responseData);
+        const teamResponse = entries.find(r => r.id === Number(entryId));
+        if (!teamResponse) continue;
+        const responseData = { ...responses[entryId], _timestamp: Date.now() };
+        console.log(`Saving draft for team response ${teamResponse.id} (entry ${entryId}):`, responseData);
+        await sheetService.updateTeamResponse(teamResponse.id, responseData);
       }
       alert('Draft saved successfully!');
-      await loadSheetData(); // Reload to show updated data
+      await loadSheetData(); // Reload to reflect saved values
     } catch (err) {
       console.error('Failed to save draft:', err);
       setError(err.message || 'Failed to save draft');
@@ -515,13 +505,13 @@ const TeamSheetEditor = () => {
                         {/* Risk Level */}
                         <td>
                           <span className={`badge ${
-                            entry.risk_level === 'Critical' ? 'bg-danger' :
-                            entry.risk_level === 'High' ? 'bg-warning text-dark' :
-                            entry.risk_level === 'Medium' ? 'bg-info' :
-                            entry.risk_level === 'Low' ? 'bg-success' :
+                            entry.original_risk_level === 'Critical' ? 'bg-danger' :
+                            entry.original_risk_level === 'High' ? 'bg-warning text-dark' :
+                            entry.original_risk_level === 'Medium' ? 'bg-info' :
+                            entry.original_risk_level === 'Low' ? 'bg-success' :
                             'bg-secondary'
                           }`} style={{fontSize: '0.75rem'}}>
-                            {entry.risk_level || 'N/A'}
+                            {entry.original_risk_level || 'N/A'}
                           </span>
                         </td>
                         

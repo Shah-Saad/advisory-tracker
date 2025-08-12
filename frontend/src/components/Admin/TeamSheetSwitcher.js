@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { toast } from 'react-toastify';
 import sheetService from '../../services/sheetService';
+import AdminNotifications from './AdminNotifications';
 import './TeamSheetSwitcher.css';
 
 const TeamSubmissionsOverview = () => {
@@ -187,6 +188,7 @@ const TeamSubmissionsOverview = () => {
 
   return (
     <div className="team-submissions-overview">
+      <AdminNotifications />
       <div className="d-flex justify-content-between align-items-center mb-4">
         <div>
           <h2 className="h4 mb-0">
@@ -497,10 +499,10 @@ const TeamSubmissionsOverview = () => {
                                     </span>
                                   </td>
                                   <td>
-                                    <span className={`badge ${response.risk_level === 'Critical' ? 'bg-danger' : 
-                                      response.risk_level === 'High' ? 'bg-warning' : 
-                                      response.risk_level === 'Medium' ? 'bg-info' : 'bg-secondary'}`}>
-                                      {response.risk_level || 'N/A'}
+                                    <span className={`badge ${response.original_risk_level === 'Critical' ? 'bg-danger' : 
+                                      response.original_risk_level === 'High' ? 'bg-warning' : 
+                                      response.original_risk_level === 'Medium' ? 'bg-info' : 'bg-secondary'}`}>
+                                      {response.original_risk_level || 'N/A'}
                                     </span>
                                   </td>
                                   <td>

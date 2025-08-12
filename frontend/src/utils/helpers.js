@@ -16,11 +16,11 @@ export const getRiskColor = (riskLevel) => {
   switch (riskLevel?.toLowerCase()) {
     case 'high':
     case 'critical':
-      return '#dc3545';
+      return '#f59e0b';
     case 'medium':
-      return '#ffc107';
+      return '#3b82f6';
     case 'low':
-      return '#198754';
+      return '#22c55e';
     default:
       return '#6c757d';
   }
@@ -30,11 +30,11 @@ export const getRiskBadgeClass = (riskLevel) => {
   switch (riskLevel?.toLowerCase()) {
     case 'high':
     case 'critical':
-      return 'bg-danger';
+      return 'badge-risk-high';
     case 'medium':
-      return 'bg-warning text-dark';
+      return 'badge-risk-medium';
     case 'low':
-      return 'bg-success';
+      return 'badge-risk-low';
     default:
       return 'bg-secondary';
   }

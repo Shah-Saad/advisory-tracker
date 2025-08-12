@@ -96,7 +96,8 @@ const sheetService = {
   // Update team response
   updateTeamResponse: async (responseId, data) => {
     try {
-      const response = await apiClient.put(`/team-responses/responses/${responseId}/status`, data);
+      // Use the general update endpoint for drafts/auto-save
+      const response = await apiClient.put(`/team-responses/responses/${responseId}`, data);
       return response.data;
     } catch (error) {
       throw error.response?.data || { message: 'Failed to update team response' };

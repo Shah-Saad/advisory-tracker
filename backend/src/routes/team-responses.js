@@ -7,6 +7,7 @@ const SheetResponse = require('../models/SheetResponse');
 const User = require('../models/User');
 const Team = require('../models/Team');
 const db = require('../config/db');
+const { broadcastToAdmins } = require('./sse');
 
 // Get team's assigned sheet entries
 router.get('/sheets/:sheetId/entries', auth, async (req, res) => {
@@ -127,6 +128,77 @@ router.put('/responses/:responseId/status', auth, async (req, res) => {
   } catch (error) {
     console.error('Error updating response status:', error);
     res.status(500).json({ error: 'Failed to update response status' });
+  }
+});
+
+// General update for a team response (save draft / auto-save)
+router.put('/responses/:responseId', auth, async (req, res) => {
+  try {
+    const { responseId } = req.params;
+    const userId = req.user.id;
+
+    // Verify the response belongs to the user's team
+    const responseRecord = await db('sheet_responses')
+      .join('team_sheets', 'sheet_responses.team_sheet_id', 'team_sheets.id')
+      .where('sheet_responses.id', responseId)
+      .andWhere('team_sheets.team_id', req.user.team_id)
+      .select('sheet_responses.*')
+      .first();
+
+    if (!responseRecord) {
+      return res.status(404).json({ error: 'Response not found or access denied' });
+    }
+
+    // Sanitize update payload: remove helper keys such as _timestamp
+    const { _timestamp, ...updateData } = req.body || {};
+
+    // Persist using service to handle side-effects (status tracking, notifications)
+    const updated = await SheetResponse.update(responseId, {
+      ...updateData,
+      updated_by: userId
+    });
+
+    // If this is the first change, ensure team sheet is marked in_progress
+    await db('team_sheets')
+      .where('id', responseRecord.team_sheet_id)
+      .andWhere('status', 'assigned')
+      .update({
+        status: 'in_progress',
+        started_at: db.raw('COALESCE(started_at, CURRENT_TIMESTAMP)'),
+        started_by: userId
+      });
+
+    // Broadcast SSE to admins and team viewers for live view refresh
+    try {
+      // Enrich payload with a few important fields
+      const enriched = await db('sheet_responses as sr')
+        .join('sheet_entries as se', 'sr.original_entry_id', 'se.id')
+        .join('team_sheets as ts', 'sr.team_sheet_id', 'ts.id')
+        .join('teams as t', 'ts.team_id', 't.id')
+        .join('sheets as s', 'ts.sheet_id', 's.id')
+        .where('sr.id', responseId)
+        .select(
+          'sr.*',
+          'se.product_name',
+          'se.oem_vendor as vendor_name',
+          'se.cve',
+          'se.risk_level as original_risk_level',
+          's.id as sheet_id',
+          's.title as sheet_title',
+          't.id as team_id',
+          't.name as team_name'
+        )
+        .first();
+
+      broadcastToAdmins({ type: 'team_response_updated', response: enriched }, 'team_response_updated', enriched?.team_id || null);
+    } catch (sseErr) {
+      console.warn('SSE broadcast failed for team response update:', sseErr);
+    }
+
+    return res.json({ success: true, response: updated });
+  } catch (error) {
+    console.error('Error saving draft response:', error);
+    return res.status(500).json({ error: 'Failed to save draft' });
   }
 });
 

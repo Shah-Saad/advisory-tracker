@@ -1,3 +1,19 @@
+/* Brand theme (orange, green, blue) */
+:root {
+  --brand-orange: #f59e0b;
+  --brand-green: #22c55e;
+  --brand-blue: #3b82f6;
+}
+
+.btn-brand { background-color: var(--brand-blue); border-color: var(--brand-blue); }
+.btn-brand:hover { background-color: #2563eb; border-color: #2563eb; }
+
+.badge-risk-high { background-color: var(--brand-orange); color: #1f2937; }
+.badge-risk-medium { background-color: var(--brand-blue); }
+.badge-risk-low { background-color: var(--brand-green); }
+
+.table thead { background: linear-gradient(90deg, rgba(59,130,246,0.08), rgba(245,158,11,0.08)); }
+
 /* Import Bootstrap CSS */
 @import '~bootstrap/dist/css/bootstrap.min.css';
 

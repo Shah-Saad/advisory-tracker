@@ -65,6 +65,20 @@ router.post('/upload', auth, uploadMiddleware, async (req, res) => {
             templateFields: sheetResult.templateFields ? sheetResult.templateFields.length : 0
         });
         
+        // Broadcast file upload notification to all admins
+        broadcastToAdmins({
+            type: 'file_uploaded',
+            fileName: req.file.originalname,
+            sheetId: sheetId,
+            uploadedBy: { 
+                id: req.user.id, 
+                name: req.user.username, 
+                team: req.user.team?.name 
+            },
+            timestamp: new Date().toISOString(),
+            totalRows: sheetResult.fileData ? sheetResult.fileData.totalRows : 0
+        }, 'file_uploaded');
+
         // Sheet is automatically distributed to all teams in SheetService.uploadFileToSheet
         res.json({
             message: 'File uploaded and distributed to all teams successfully',

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import sheetService from '../../services/sheetService';
 import userService from '../../services/userService';
 import CISAReportGenerator from './CISAReportGenerator';
+import AdminNotifications from './AdminNotifications';
 import './EnhancedAdminDashboard.css';
 
 const EnhancedAdminDashboard = ({ user }) => {
@@ -161,6 +162,7 @@ const EnhancedAdminDashboard = ({ user }) => {
 
   return (
     <div className="enhanced-admin-dashboard">
+      <AdminNotifications />
       {/* Header */}
       <div className="dashboard-header">
         <div>

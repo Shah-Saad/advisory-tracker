@@ -1,7 +1,12 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import sheetService from '../../services/sheetService';
 import sseService from '../../services/sseService';
+import { Pie, Bar } from 'react-chartjs-2';
+import 'chart.js/auto';
+import { useAdminTeamResponses } from '../../services/queries';
+import AdminNotifications from './AdminNotifications';
+import './AdminTeamSheetView.css';
 
 const AdminTeamSheetView = () => {
   const { sheetId, teamKey } = useParams();
@@ -14,6 +19,20 @@ const AdminTeamSheetView = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [sseConnected, setSseConnected] = useState(false);
   const intervalRef = useRef(null);
+  const [vendorFilter, setVendorFilter] = useState('all');
+  const [productFilter, setProductFilter] = useState('');
+  const [riskFilter, setRiskFilter] = useState('all');
+  const [cveFilter, setCveFilter] = useState('');
+  const [deployedFilter, setDeployedFilter] = useState('all');
+  const [locationFilter, setLocationFilter] = useState('');
+
+  const filterStorageKey = useMemo(
+    () => `admin_team_sheet_filters_${sheetId}_${teamKey || 'all'}`,
+    [sheetId, teamKey]
+  );
+
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
 
   const loadTeamSheetData = useCallback(async (silent = false) => {
     try {
@@ -48,6 +67,9 @@ const AdminTeamSheetView = () => {
       }
     }
   }, [sheetId, teamKey]);
+  // React Query: fetch and cache team responses (client-side paging for now)
+  const { data: rqData } = useAdminTeamResponses({ sheetId, teamKey, page, pageSize, filters: {} });
+
 
   useEffect(() => {
     loadTeamSheetData();
@@ -95,23 +117,27 @@ const AdminTeamSheetView = () => {
       // Don't immediately attempt to reconnect - let the SSE service handle its own reconnection logic
     };
 
-    // Handle team sheet updates
+    // Handle team sheet updates (from original entries) and team response updates (from teams)
     const handleTeamSheetUpdate = (data) => {
       console.log('AdminTeamSheetView: Received real-time update for sheet', sheetId, ':', data);
       
-      // If this update is for the current sheet, refresh the data
-      if (data.data && data.data.entry && data.data.entry.sheet_id === parseInt(sheetId)) {
+      const sheetIdFromEntry = data?.data?.entry?.sheet_id;
+      const sheetIdFromResponse = data?.data?.response?.sheet_id;
+      const targetSheetId = sheetIdFromEntry ?? sheetIdFromResponse;
+
+      if (targetSheetId === parseInt(sheetId)) {
         console.log('AdminTeamSheetView: Update is for current sheet', sheetId, '- refreshing data...');
         loadTeamSheetData(true); // Silent refresh to show the updates
         setLastUpdated(new Date());
       } else {
-        console.log('AdminTeamSheetView: Update is for different sheet', data.data?.entry?.sheet_id, '- ignoring');
+        console.log('AdminTeamSheetView: Update is for different sheet', targetSheetId, '- ignoring');
       }
     };
 
     // Register event listeners
     sseService.addEventListener('connected', handleSSEConnected);
     sseService.addEventListener('team_sheet_updated', handleTeamSheetUpdate);
+    sseService.addEventListener('team_response_updated', handleTeamSheetUpdate);
     sseService.addEventListener('maxReconnectAttemptsReached', handleSSEDisconnected);
 
     // Check initial connection status
@@ -123,10 +149,101 @@ const AdminTeamSheetView = () => {
     return () => {
       sseService.removeEventListener('connected', handleSSEConnected);
       sseService.removeEventListener('team_sheet_updated', handleTeamSheetUpdate);
+      sseService.removeEventListener('team_response_updated', handleTeamSheetUpdate);
       sseService.removeEventListener('maxReconnectAttemptsReached', handleSSEDisconnected);
       // Don't disconnect here as other admin views might be using it
     };
   }, [sheetId, loadTeamSheetData]);
+
+  // Load saved filters from storage on mount / sheet change
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(filterStorageKey);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        setVendorFilter(parsed.vendor ?? 'all');
+        setProductFilter(parsed.product ?? '');
+        setRiskFilter(parsed.risk ?? 'all');
+        setCveFilter(parsed.cve ?? '');
+        setDeployedFilter(parsed.deployed ?? 'all');
+        setLocationFilter(parsed.location ?? '');
+      }
+    } catch (_) {
+      // ignore storage errors
+    }
+  }, [filterStorageKey]);
+
+  // Persist filters when they change
+  useEffect(() => {
+    try {
+      const payload = {
+        vendor: vendorFilter,
+        product: productFilter,
+        risk: riskFilter,
+        cve: cveFilter,
+        deployed: deployedFilter,
+        location: locationFilter
+      };
+      localStorage.setItem(filterStorageKey, JSON.stringify(payload));
+    } catch (_) {
+      // ignore storage errors
+    }
+  }, [vendorFilter, productFilter, riskFilter, cveFilter, deployedFilter, locationFilter, filterStorageKey]);
+
+  const clearAllFilters = () => {
+    setVendorFilter('all');
+    setProductFilter('');
+    setRiskFilter('all');
+    setCveFilter('');
+    setDeployedFilter('all');
+    setLocationFilter('');
+    try { localStorage.removeItem(filterStorageKey); } catch (_) {}
+  };
+
+  // Compute unique vendors for the filter dropdown
+  const vendorOptions = useMemo(() => {
+    const list = teamData?.responses || [];
+    const set = new Set();
+    list.forEach(r => {
+      const v = r.vendor_name || r.oem_vendor;
+      if (v && typeof v === 'string') set.add(v.trim());
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [teamData]);
+
+  const riskOptions = useMemo(() => {
+    const list = teamData?.responses || [];
+    const set = new Set();
+    list.forEach(r => {
+      const rv = r.original_risk_level;
+      if (rv) set.add(rv);
+    });
+    // Preferred order
+    const order = { Critical: 4, High: 3, Medium: 2, Low: 1 };
+    return Array.from(set).sort((a, b) => (order[b] || 0) - (order[a] || 0));
+  }, [teamData]);
+
+  // Filtered responses based on vendor selection
+  const filteredResponses = useMemo(() => {
+    const rows = (rqData?.items || teamData?.responses || []);
+    return rows.filter(r => {
+      const vendor = (r.vendor_name || r.oem_vendor || '').toLowerCase();
+      const product = (r.product_name || r.original_product_name || '').toLowerCase();
+      const risk = (r.original_risk_level || '').toLowerCase();
+      const cve = (r.cve || '').toLowerCase();
+      const deployed = (r.deployed_in_ke || '').toUpperCase();
+      const site = (r.site || r.original_site || '').toLowerCase();
+
+      const vendorOk = vendorFilter === 'all' ? true : vendor === vendorFilter.toLowerCase();
+      const productOk = productFilter ? product.includes(productFilter.toLowerCase()) : true;
+      const riskOk = riskFilter === 'all' ? true : risk === riskFilter.toLowerCase();
+      const cveOk = cveFilter ? cve.includes(cveFilter.toLowerCase()) : true;
+      const deployedOk = deployedFilter === 'all' ? true : deployed === (deployedFilter === 'yes' ? 'Y' : 'N');
+      const locationOk = locationFilter ? site.includes(locationFilter.toLowerCase()) : true;
+
+      return vendorOk && productOk && riskOk && cveOk && deployedOk && locationOk;
+    });
+  }, [teamData, vendorFilter, productFilter, riskFilter, cveFilter, deployedFilter, locationFilter]);
 
   const toggleAutoRefresh = () => {
     setIsAutoRefresh(!isAutoRefresh);
@@ -221,6 +338,34 @@ const AdminTeamSheetView = () => {
 
   return (
     <div className="container-fluid p-4">
+      <AdminNotifications />
+      {/* Quick Stats */}
+      <div className="row mb-3">
+        <div className="col-md-4 mb-2">
+          <div className="p-3 rounded atsv-kpi orange">
+            <div className="small text-muted">High/Critical</div>
+            <div className="fw-bold fs-4">
+              {filteredResponses.filter(r => ['High','Critical'].includes(r.original_risk_level)).length}
+            </div>
+          </div>
+        </div>
+        <div className="col-md-4 mb-2">
+          <div className="p-3 rounded atsv-kpi">
+            <div className="small text-muted">Medium</div>
+            <div className="fw-bold fs-4">
+              {filteredResponses.filter(r => r.original_risk_level === 'Medium').length}
+            </div>
+          </div>
+        </div>
+        <div className="col-md-4 mb-2">
+          <div className="p-3 rounded atsv-kpi green">
+            <div className="small text-muted">Low</div>
+            <div className="fw-bold fs-4">
+              {filteredResponses.filter(r => r.original_risk_level === 'Low').length}
+            </div>
+          </div>
+        </div>
+      </div>
       <div className="row">
         <div className="col-12">
           <div className="d-flex justify-content-between align-items-center mb-4">
@@ -330,17 +475,102 @@ const AdminTeamSheetView = () => {
             </div>
           </div>
 
+          {/* Charts */}
+          <div className="row mb-4">
+            <div className="col-md-4 mb-3">
+              <div className="card chart-card">
+                <div className="card-header">Risk Level Distribution</div>
+                <div className="card-body">
+                  <Pie data={{
+                    labels: ['Critical/High','Medium','Low'],
+                    datasets: [{
+                      data: [
+                        filteredResponses.filter(r => ['High','Critical'].includes(r.original_risk_level)).length,
+                        filteredResponses.filter(r => r.original_risk_level === 'Medium').length,
+                        filteredResponses.filter(r => r.original_risk_level === 'Low').length
+                      ],
+                      backgroundColor: ['#f59e0b','#3b82f6','#22c55e']
+                    }]
+                  }} />
+                </div>
+              </div>
+            </div>
+            <div className="col-md-8 mb-3">
+              <div className="card chart-card">
+                <div className="card-header">Entries by Vendor</div>
+                <div className="card-body">
+                  <Bar data={{
+                    labels: vendorOptions,
+                    datasets: [{
+                      label: 'Entries',
+                      data: vendorOptions.map(v => filteredResponses.filter(r => (r.vendor_name||r.oem_vendor)===v).length),
+                      backgroundColor: '#3b82f6'
+                    }]
+                  }} options={{
+                    plugins: { legend: { display: false } },
+                    scales: { y: { beginAtZero: true, ticks: { precision:0 } } }
+                  }} />
+                </div>
+              </div>
+            </div>
+          </div>
+
           {/* Team Responses */}
           <div className="card">
             <div className="card-header">
-              <div className="d-flex justify-content-between align-items-center">
-                <h6 className="mb-0">Live Team Responses ({teamData.responses?.length || 0})</h6>
-                <div className="d-flex align-items-center gap-2">
-                  <small className="text-muted">
-                    <i className="fas fa-circle text-success" style={{fontSize: '8px'}}></i>
-                    {isAutoRefresh ? ' Auto-updating every 30s' : ' Auto-update paused'}
-                  </small>
-                  {refreshing && <div className="spinner-border spinner-border-sm" role="status"></div>}
+              <div className="d-flex justify-content-between align-items-center flex-wrap gap-3">
+                <h6 className="mb-0">Live Team Responses ({filteredResponses.length || 0})</h6>
+                <div className="d-flex align-items-center flex-wrap gap-3">
+                  <div className="d-flex align-items-center">
+                    <label className="me-2 mb-0 small">Vendor</label>
+                    <select className="form-select form-select-sm" value={vendorFilter} onChange={(e) => setVendorFilter(e.target.value)}>
+                      <option value="all">All Vendors</option>
+                      {vendorOptions.map(v => (<option key={v} value={v}>{v}</option>))}
+                    </select>
+                  </div>
+                  <div className="d-flex align-items-center">
+                    <label className="me-2 mb-0 small">Product</label>
+                    <input className="form-control form-control-sm" value={productFilter} onChange={(e) => setProductFilter(e.target.value)} placeholder="Search product" />
+                  </div>
+                  <div className="d-flex align-items-center">
+                    <label className="me-2 mb-0 small">Risk</label>
+                    <select className="form-select form-select-sm" value={riskFilter} onChange={(e) => setRiskFilter(e.target.value)}>
+                      <option value="all">All</option>
+                      {riskOptions.map(r => (<option key={r} value={r}>{r}</option>))}
+                    </select>
+                  </div>
+                  <div className="d-flex align-items-center">
+                    <label className="me-2 mb-0 small">CVE</label>
+                    <input className="form-control form-control-sm" value={cveFilter} onChange={(e) => setCveFilter(e.target.value)} placeholder="Search CVE" />
+                  </div>
+                  <div className="d-flex align-items-center">
+                    <label className="me-2 mb-0 small">Deployed</label>
+                    <select className="form-select form-select-sm" value={deployedFilter} onChange={(e) => setDeployedFilter(e.target.value)}>
+                      <option value="all">All</option>
+                      <option value="yes">Yes</option>
+                      <option value="no">No</option>
+                    </select>
+                  </div>
+                  <div className="d-flex align-items-center">
+                    <label className="me-2 mb-0 small">Location/Site</label>
+                    <input className="form-control form-control-sm" value={locationFilter} onChange={(e) => setLocationFilter(e.target.value)} placeholder="Search site" />
+                  </div>
+                  <div className="d-flex align-items-center gap-2">
+                    <small className="text-muted">
+                      <i className="fas fa-circle text-success" style={{fontSize: '8px'}}></i>
+                      {isAutoRefresh ? ' Auto-updating every 30s' : ' Auto-update paused'}
+                    </small>
+                    {refreshing && <div className="spinner-border spinner-border-sm" role="status"></div>}
+                    <button className="btn btn-sm btn-outline-secondary" onClick={clearAllFilters} title="Clear all filters">
+                      Clear
+                    </button>
+                    <div className="d-flex align-items-center">
+                      <label className="me-2 mb-0 small">Page</label>
+                      <button className="btn btn-sm btn-outline-secondary me-1" disabled={page===1} onClick={()=>setPage(p=>p-1)}>Prev</button>
+                      <span className="small me-1">{page}</span>
+                      <button className="btn btn-sm btn-outline-secondary" disabled={(page*pageSize)>=((rqData?.total)||filteredResponses.length)} onClick={()=>setPage(p=>p+1)}>Next</button>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -386,7 +616,7 @@ const AdminTeamSheetView = () => {
                       </tr>
                     </thead>
                     <tbody>
-                      {teamData.responses.map((response, index) => (
+                      {filteredResponses.map((response, index) => (
                         <tr key={response.id || index} className={`${getEntryStatusColor(response)} ${isRecentlyUpdated(response.updated_at) ? 'border-primary border-2' : ''}`}>
                           <td>
                             <small>{response.product_name || 'N/A'}</small>
@@ -410,12 +640,12 @@ const AdminTeamSheetView = () => {
                           </td>
                           <td>
                             <span className={`badge ${
-                              response.risk_level === 'Critical' ? 'bg-danger' :
-                              response.risk_level === 'High' ? 'bg-warning text-dark' :
-                              response.risk_level === 'Medium' ? 'bg-info text-dark' :
-                              response.risk_level === 'Low' ? 'bg-success' : 'bg-secondary'
+                              response.original_risk_level === 'Critical' ? 'bg-danger' :
+                              response.original_risk_level === 'High' ? 'badge-risk-high' :
+                              response.original_risk_level === 'Medium' ? 'badge-risk-medium' :
+                              response.original_risk_level === 'Low' ? 'badge-risk-low' : 'bg-secondary'
                             }`}>
-                              {response.risk_level || 'Unknown'}
+                              {response.original_risk_level || 'Unknown'}
                             </span>
                           </td>
                           <td>

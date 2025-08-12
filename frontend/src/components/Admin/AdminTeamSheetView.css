@@ -1,0 +1,29 @@
+:root {
+  --brand-orange: #f59e0b; /* orange */
+  --brand-green: #22c55e;  /* green */
+  --brand-blue: #3b82f6;   /* blue */
+  --brand-dark: #0f172a;
+}
+
+.atsv-header {
+  background: linear-gradient(90deg, rgba(59,130,246,0.12), rgba(245,158,11,0.12));
+  border-bottom: 1px solid rgba(15,23,42,0.08);
+}
+
+.atsv-kpi {
+  min-width: 140px;
+  border-left: 4px solid var(--brand-blue);
+  background-color: rgba(59,130,246,0.06);
+}
+.atsv-kpi.orange { border-left-color: var(--brand-orange); background-color: rgba(245,158,11,0.08); }
+.atsv-kpi.green  { border-left-color: var(--brand-green);  background-color: rgba(34,197,94,0.08); }
+
+.badge-risk-high { background-color: var(--brand-orange); color: #1f2937; }
+.badge-risk-medium { background-color: var(--brand-blue); }
+.badge-risk-low { background-color: var(--brand-green); }
+
+.chart-card {
+  border: 1px solid rgba(15,23,42,0.08);
+}
+
+
