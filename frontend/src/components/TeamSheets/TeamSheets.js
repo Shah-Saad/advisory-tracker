@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import sheetService from '../../services/sheetService';
 
 const TeamSheets = ({ user }) => {
+  const navigate = useNavigate();
   const [sheets, setSheets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -43,6 +44,20 @@ const TeamSheets = ({ user }) => {
       await loadTeamSheets(); // Reload to show updated status
     } catch (err) {
       setError(err.message || 'Failed to complete sheet');
+    }
+  };
+
+  // Handle status and comments updates for completed sheets
+  const handleUpdateStatusComments = async (sheetId) => {
+    try {
+      console.log('🔄 Navigating to sheet editor for status/comments update...');
+      
+      // Navigate to the sheet editor where the user can update status and comments
+      navigate(`/team-sheets/${sheetId}/edit`);
+      
+    } catch (err) {
+      console.error('❌ Failed to navigate to sheet editor:', err);
+      setError('Failed to open sheet editor');
     }
   };
 
@@ -206,10 +221,24 @@ const TeamSheets = ({ user }) => {
                         )}
                         
                         {sheet.assignment_status === 'completed' && (
-                          <span className="btn btn-outline-success btn-sm disabled">
-                            <i className="fas fa-check me-1"></i>
-                            Submitted
-                          </span>
+                          <>
+                            <Link 
+                              to={`/team-sheets/${sheet.id}/edit`}
+                              className="btn btn-outline-success btn-sm flex-fill"
+                            >
+                              <i className="fas fa-eye me-1"></i>
+                              View Responses
+                            </Link>
+                            
+                            <button 
+                              className="btn btn-outline-warning btn-sm"
+                              onClick={() => handleUpdateStatusComments(sheet.id)}
+                              title="Update status and comments (works even after submission)"
+                            >
+                              <i className="fas fa-edit me-1"></i>
+                              Update Status/Comments
+                            </button>
+                          </>
                         )}
                       </div>
                     </div>

@@ -335,9 +335,18 @@ class SheetService {
             updated_at: db.fn.now()
           });
         console.log(`✅ Updated response for entry ${entryId}`);
+        
+        // Track the edit
+        try {
+          const EditedEntriesTrackingService = require('./EditedEntriesTrackingService');
+          await EditedEntriesTrackingService.trackEntryEdit(userId, sheetId, entryId, existingResponse.id);
+          console.log(`✅ Tracked edit for entry ${entryId}`);
+        } catch (trackingError) {
+          console.error('❌ Failed to track edit:', trackingError);
+        }
       } else {
         // Create new response
-        await db('sheet_responses')
+        const [newResponse] = await db('sheet_responses')
           .insert({
             team_sheet_id: teamSheet.id,
             original_entry_id: entryId,
@@ -345,8 +354,18 @@ class SheetService {
             updated_by: userId,
             created_at: db.fn.now(),
             updated_at: db.fn.now()
-          });
+          })
+          .returning('*');
         console.log(`✅ Created new response for entry ${entryId}`);
+        
+        // Track the edit
+        try {
+          const EditedEntriesTrackingService = require('./EditedEntriesTrackingService');
+          await EditedEntriesTrackingService.trackEntryEdit(userId, sheetId, entryId, newResponse.id);
+          console.log(`✅ Tracked edit for entry ${entryId}`);
+        } catch (trackingError) {
+          console.error('❌ Failed to track edit:', trackingError);
+        }
       }
     }
     console.log('✅ Saved team responses');
@@ -358,21 +377,25 @@ class SheetService {
 
     // Create additional notification for sheet submission
     try {
+      console.log('🔔 Creating sheet submission notifications...');
       const team = await db('teams').where('id', teamId).first();
       const sheet = await db('sheets').where('id', sheetId).first();
       const user = await db('users').where('id', userId).first();
       
+      console.log('📊 Found data:', { team: team?.name, sheet: sheet?.title, user: user?.username });
+      
       if (team && sheet && user) {
         // Get all admin users and create notifications for each
-        const admins = await db('users')
-          .join('roles', 'users.role_id', 'roles.id')
-          .where('roles.name', 'admin')
-          .select('users.id');
+        const admins = await db('users as u')
+          .join('roles as r', 'u.role_id', 'r.id')
+          .where('r.name', 'admin')
+          .select('u.id');
 
+        console.log(`📊 Found ${admins.length} admin users to notify`);
         for (const admin of admins) {
+          console.log(`📝 Creating notification for admin ${admin.id}...`);
           await NotificationService.createNotification({
-            user_id: userId,
-            admin_id: admin.id,
+            user_id: admin.id, // Use admin.id as user_id for admin notifications
             type: 'sheet_submitted',
             title: 'Sheet Submitted Successfully',
             message: `${user.username || user.email} from ${team.name} team has submitted sheet "${sheet.title}" with ${responsesArray.length} responses`,
@@ -386,6 +409,7 @@ class SheetService {
               action: 'sheet_submitted'
             }
           });
+          console.log(`✅ Created notification for admin ${admin.id}`);
         }
         console.log(`✅ Created sheet submission notifications for ${admins.length} admins`);
       }
@@ -777,7 +801,7 @@ class SheetService {
     return sheetsWithTeamStatus;
   }
 
-  static async getTeamSheetData(sheetId, teamId) {
+  static async getTeamSheetData(sheetId, teamId, showOnlyEdited = false) {
     const sheet = await Sheet.findById(sheetId);
     if (!sheet) {
       throw new Error('Sheet not found');
@@ -882,6 +906,84 @@ class SheetService {
       }
     }
 
+    // Filter entries based on showOnlyEdited parameter
+    let filteredEntries = teamEntries;
+    if (showOnlyEdited) {
+      try {
+        // Use the new tracking service to get edited entry IDs
+        const EditedEntriesTrackingService = require('./EditedEntriesTrackingService');
+        await EditedEntriesTrackingService.ensureTableExists();
+        
+        const editedEntryIds = await EditedEntriesTrackingService.getTeamEditedEntryIds(teamId, sheetId);
+        
+        if (editedEntryIds.length > 0) {
+          // Filter entries to show only edited ones
+          filteredEntries = teamEntries.filter(entry => 
+            editedEntryIds.includes(entry.id)
+          );
+        } else {
+          // Fallback to the old method if no tracking data exists
+          const editedEntryIdsFallback = teamResponses
+            .filter(response => {
+              // Consider an entry as edited if it has any non-null, non-empty values
+              return response.current_status || 
+                     response.comments || 
+                     response.vendor_contacted || 
+                     response.compensatory_controls_provided ||
+                     response.estimated_time ||
+                     response.site ||
+                     response.vendor_contact_date ||
+                     response.patching_est_release_date ||
+                     response.implementation_date ||
+                     response.compensatory_controls_details;
+            })
+            .map(response => response.original_entry_id);
+          
+          // Filter entries to show only edited ones
+          filteredEntries = teamEntries.filter(entry => 
+            editedEntryIdsFallback.includes(entry.id)
+          );
+        }
+      } catch (error) {
+        console.error('Error filtering edited entries:', error);
+        // Fallback to showing all entries if filtering fails
+        filteredEntries = teamEntries;
+      }
+    }
+
+    // Merge response data into entries for better data access
+    const entriesWithResponses = filteredEntries.map(entry => {
+      const response = teamResponses.find(r => r.original_entry_id === entry.id);
+      if (response) {
+        return {
+          ...entry,
+          // Add original_entry_id for frontend compatibility
+          original_entry_id: entry.id,
+          // Override entry data with response data where available
+          status: response.status || entry.status,
+          current_status: response.current_status || entry.current_status,
+          comments: response.comments || entry.comments,
+          deployed_in_ke: response.deployed_in_ke || entry.deployed_in_ke,
+          vendor_contacted: response.vendor_contacted || entry.vendor_contacted,
+          vendor_contact_date: response.vendor_contact_date || entry.vendor_contact_date,
+          compensatory_controls_provided: response.compensatory_controls_provided || entry.compensatory_controls_provided,
+          compensatory_controls_details: response.compensatory_controls_details || entry.compensatory_controls_details,
+          estimated_time: response.estimated_time || entry.estimated_time,
+          site: response.site || entry.site,
+          patching_est_release_date: response.patching_est_release_date || entry.patching_est_release_date,
+          implementation_date: response.implementation_date || entry.implementation_date,
+          updated_by: response.updated_by,
+          updated_at: response.updated_at,
+          response_id: response.id
+        };
+      }
+      return {
+        ...entry,
+        // Add original_entry_id for frontend compatibility even when no response exists
+        original_entry_id: entry.id
+      };
+    });
+
     return {
       sheet,
       assignment: {
@@ -897,13 +999,13 @@ class SheetService {
       team_name: team.name,
       assigned_at: assignment.assigned_at,
       submitted_at: assignment.completed_at,
-      entries: teamEntries,
+      entries: entriesWithResponses,
       responses: teamResponses,
       response_count: teamResponses.length,
-      entry_count: teamEntries.length,
+      entry_count: filteredEntries.length,
       completion_percentage: assignment.completion_percentage || 0,
       data_source: 'team_responses',
-      display_mode: 'team_specific'
+      display_mode: showOnlyEdited ? 'edited_only' : 'team_specific'
     };
   }
 

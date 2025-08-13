@@ -33,7 +33,7 @@ class NotificationService {
 
       return notifications.map(notification => ({
         ...notification,
-        data: notification.data ? JSON.parse(notification.data) : null
+        data: notification.data ? (typeof notification.data === 'string' ? JSON.parse(notification.data) : notification.data) : null
       }));
     } catch (error) {
       console.error('❌ Error getting user notifications:', error);
@@ -50,7 +50,7 @@ class NotificationService {
 
       return notifications.map(notification => ({
         ...notification,
-        data: notification.data ? JSON.parse(notification.data) : null
+        data: notification.data ? (typeof notification.data === 'string' ? JSON.parse(notification.data) : notification.data) : null
       }));
     } catch (error) {
       console.error('❌ Error getting admin notifications:', error);

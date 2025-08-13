@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import sheetService from '../../services/sheetService';
 import authService from '../../services/authService';
@@ -17,6 +17,8 @@ const TeamSheetEditor = () => {
   const [timeRemaining, setTimeRemaining] = useState(0);
   const [autoSaving, setAutoSaving] = useState(false);
   const [lastSaved, setLastSaved] = useState(null);
+  const [editedEntries, setEditedEntries] = useState([]);
+  const [displayMode, setDisplayMode] = useState('all'); // 'all' or 'edited'
 
   // Real-time sync for collaborative editing
   useEffect(() => {
@@ -75,91 +77,7 @@ const TeamSheetEditor = () => {
     };
   }, [user]);
 
-  useEffect(() => {
-    loadSheetData();
-    setUser(authService.getCurrentUser());
-  }, [sheetId]);
-
-  // Timer effect for submit button availability
-  useEffect(() => {
-    if (!sheet) return;
-
-    console.log('🔍 Submit button debug:', {
-      sheet: sheet,
-      assigned_at: sheet.assigned_at,
-      assignment_status: sheet.assignment_status,
-      status: sheet.status
-    });
-
-    // Fallback: Enable submit after 2 minutes regardless of other conditions
-    const fallbackTimer = setTimeout(() => {
-      setSubmitEnabled(true);
-      setTimeRemaining(0);
-      console.log('✅ Fallback: Submit button enabled after 2 minutes');
-    }, 120000); // 2 minutes
-
-    // If no assigned_at, enable submit after 1 minute from now
-    if (!sheet.assigned_at) {
-      const oneMinuteFromNow = new Date(Date.now() + 60 * 1000);
-      const timer = setInterval(() => {
-        const now = new Date();
-        if (now >= oneMinuteFromNow) {
-          setSubmitEnabled(true);
-          setTimeRemaining(0);
-          clearInterval(timer);
-          clearTimeout(fallbackTimer);
-        } else {
-          const remaining = Math.ceil((oneMinuteFromNow - now) / 1000);
-          setTimeRemaining(remaining);
-          setSubmitEnabled(false);
-        }
-      }, 1000);
-      return () => {
-        clearInterval(timer);
-        clearTimeout(fallbackTimer);
-      };
-    }
-
-    const assignedTime = new Date(sheet.assigned_at);
-    const now = new Date();
-    const timeElapsed = now - assignedTime;
-    const oneMinuteMs = 60 * 1000; // 1 minute in milliseconds
-
-    if (timeElapsed >= oneMinuteMs) {
-      // More than 1 minute has passed
-      setSubmitEnabled(true);
-      setTimeRemaining(0);
-      clearTimeout(fallbackTimer);
-    } else {
-      // Less than 1 minute has passed, start countdown
-      const remaining = oneMinuteMs - timeElapsed;
-      setTimeRemaining(Math.ceil(remaining / 1000)); // Convert to seconds
-      setSubmitEnabled(false);
-
-      // Start countdown timer
-      const timer = setInterval(() => {
-        const currentTime = new Date();
-        const currentElapsed = currentTime - assignedTime;
-        
-        if (currentElapsed >= oneMinuteMs) {
-          setSubmitEnabled(true);
-          setTimeRemaining(0);
-          clearInterval(timer);
-          clearTimeout(fallbackTimer);
-        } else {
-          const currentRemaining = oneMinuteMs - currentElapsed;
-          setTimeRemaining(Math.ceil(currentRemaining / 1000));
-        }
-      }, 1000);
-
-      return () => {
-        clearInterval(timer);
-        clearTimeout(fallbackTimer);
-      };
-    }
-  }, [sheet]);
-
-  const loadSheetData = async () => {
+  const loadSheetData = useCallback(async () => {
     try {
       setLoading(true);
       setError('');
@@ -174,20 +92,38 @@ const TeamSheetEditor = () => {
       
       // Get team-specific sheet data
       const teamSheetData = await sheetService.getTeamSheetData(sheetId, teamId);
-      setSheet(teamSheetData.sheet);
+      setSheet({
+        ...teamSheetData.sheet,
+        assignment_status: teamSheetData.assignment_status,
+        assigned_at: teamSheetData.assigned_at,
+        completed_at: teamSheetData.submitted_at
+      });
       setEntries(teamSheetData.responses);
       
       // Initialize responses object from team responses
       const initialResponses = {};
       teamSheetData.responses.forEach(response => {
-        initialResponses[response.id] = {
+        // Helper function to format date for HTML date input
+        const formatDateForInput = (dateString) => {
+          if (!dateString) return '';
+          try {
+            const date = new Date(dateString);
+            if (isNaN(date.getTime())) return '';
+            return date.toISOString().split('T')[0]; // Convert to YYYY-MM-DD format
+          } catch (error) {
+            console.warn('Failed to format date:', dateString, error);
+            return '';
+          }
+        };
+
+        initialResponses[response.original_entry_id] = {
           current_status: response.current_status || '',
           comments: response.comments || '',
           deployed_in_ke: response.deployed_in_ke || 'N',
           vendor_contacted: response.vendor_contacted || '',
-          vendor_contact_date: response.vendor_contact_date || '',
-          patching_est_release_date: response.patching_est_release_date || '',
-          implementation_date: response.implementation_date || '',
+          vendor_contact_date: formatDateForInput(response.vendor_contact_date),
+          patching_est_release_date: formatDateForInput(response.patching_est_release_date),
+          implementation_date: formatDateForInput(response.implementation_date),
           compensatory_controls_provided: response.compensatory_controls_provided || '',
           compensatory_controls_details: response.compensatory_controls_details || '',
           estimated_time: response.estimated_time || '',
@@ -197,12 +133,122 @@ const TeamSheetEditor = () => {
       });
       setResponses(initialResponses);
       
+      // Load edited entries data
+      await loadEditedEntries();
+      
     } catch (err) {
       console.error('Failed to load sheet data:', err);
       setError(err.message || 'Failed to load sheet data');
     } finally {
       setLoading(false);
     }
+  }, [sheetId]);
+
+  useEffect(() => {
+    loadSheetData();
+    setUser(authService.getCurrentUser());
+  }, [sheetId, loadSheetData]);
+
+  // Timer effect for submit button availability
+  useEffect(() => {
+    if (!sheet) return;
+
+    console.log('🔍 Submit button debug:', {
+      sheet: sheet,
+      assigned_at: sheet.assigned_at,
+      assignment_status: sheet.assignment_status,
+      status: sheet.status
+    });
+
+    // Fallback: Enable submit after 10 seconds regardless of other conditions
+    const fallbackTimer = setTimeout(() => {
+      setSubmitEnabled(true);
+      setTimeRemaining(0);
+      console.log('✅ Fallback: Submit button enabled after 10 seconds');
+    }, 10000); // 10 seconds
+
+    // If no assigned_at, enable submit after 5 seconds from now
+    if (!sheet.assigned_at) {
+      const fiveSecondsFromNow = new Date(Date.now() + 5 * 1000);
+      const timer = setInterval(() => {
+        const now = new Date();
+        if (now >= fiveSecondsFromNow) {
+          setSubmitEnabled(true);
+          setTimeRemaining(0);
+          clearInterval(timer);
+          clearTimeout(fallbackTimer);
+        } else {
+          const remaining = Math.ceil((fiveSecondsFromNow - now) / 1000);
+          setTimeRemaining(remaining);
+          setSubmitEnabled(false);
+        }
+      }, 1000);
+      return () => {
+        clearInterval(timer);
+        clearTimeout(fallbackTimer);
+      };
+    }
+
+    const assignedTime = new Date(sheet.assigned_at);
+    const now = new Date();
+    const timeElapsed = now - assignedTime;
+    const fiveSecondsMs = 5 * 1000; // 5 seconds in milliseconds
+
+    if (timeElapsed >= fiveSecondsMs) {
+      // More than 5 seconds have passed
+      setSubmitEnabled(true);
+      setTimeRemaining(0);
+      clearTimeout(fallbackTimer);
+    } else {
+      // Less than 5 seconds have passed, start countdown
+      const remaining = fiveSecondsMs - timeElapsed;
+      setTimeRemaining(Math.ceil(remaining / 1000)); // Convert to seconds
+      setSubmitEnabled(false);
+
+      // Start countdown timer
+      const timer = setInterval(() => {
+        const currentTime = new Date();
+        const currentElapsed = currentTime - assignedTime;
+        
+        if (currentElapsed >= fiveSecondsMs) {
+          setSubmitEnabled(true);
+          setTimeRemaining(0);
+          clearInterval(timer);
+          clearTimeout(fallbackTimer);
+        } else {
+          const currentRemaining = fiveSecondsMs - currentElapsed;
+          setTimeRemaining(Math.ceil(currentRemaining / 1000));
+        }
+      }, 1000);
+
+      return () => {
+        clearInterval(timer);
+        clearTimeout(fallbackTimer);
+      };
+    }
+  }, [sheet]);
+
+  const loadEditedEntries = async () => {
+    try {
+      const editedData = await sheetService.getEditedEntries(sheetId);
+      setEditedEntries(editedData.entries || []);
+      console.log('📊 Loaded edited entries:', editedData.entries?.length || 0);
+    } catch (err) {
+      console.error('Failed to load edited entries:', err);
+      // Don't set error for this as it's not critical
+    }
+  };
+
+  const toggleDisplayMode = () => {
+    setDisplayMode(prev => prev === 'all' ? 'edited' : 'all');
+  };
+
+  // Get current entries to display based on mode
+  const getCurrentEntries = () => {
+    if (displayMode === 'edited') {
+      return editedEntries;
+    }
+    return entries;
   };
 
   // Auto-save individual entry changes (debounced)
@@ -219,8 +265,8 @@ const TeamSheetEditor = () => {
         throw new Error('User is not assigned to a team');
       }
       
-      // Find the team response record
-      const response = entries.find(r => r.id === entryId);
+      // Find the team response record using original_entry_id
+      const response = entries.find(r => r.original_entry_id === entryId);
       if (!response) {
         throw new Error('Response not found');
       }
@@ -381,8 +427,8 @@ const TeamSheetEditor = () => {
           }
         });
         
-        // Find the team response record
-        const response = entries.find(r => r.id === parseInt(entryId));
+        // Find the team response record using original_entry_id
+        const response = entries.find(r => r.original_entry_id === parseInt(entryId));
         if (!response) {
           console.warn(`⚠️ Team response not found for entry ${entryId}`);
           continue;
@@ -417,6 +463,79 @@ const TeamSheetEditor = () => {
       
       setError(errorMessage);
       alert(`Failed to save draft: ${errorMessage}`);
+    }
+  };
+
+  // Handle status and comments updates (works even after submission)
+  const handleUpdateStatusComments = async () => {
+    try {
+      console.log('🔄 Starting status/comments update process...');
+      
+      if (!responses || Object.keys(responses).length === 0) {
+        alert('No data to update. Please fill in status and comments first.');
+        return;
+      }
+      
+      let updatedCount = 0;
+      
+      // Update each team response individually
+      for (const entryId in responses) {
+        const responseData = responses[entryId];
+        
+        // Only update status and comments fields
+        const statusCommentsData = {
+          current_status: responseData.current_status,
+          comments: responseData.comments
+        };
+        
+        // Skip if no status or comments to update
+        if (!statusCommentsData.current_status && !statusCommentsData.comments) {
+          continue;
+        }
+        
+        console.log(`📝 Updating status/comments for entry ${entryId}:`, statusCommentsData);
+        
+        // Find the team response record using original_entry_id
+        const response = entries.find(r => r.original_entry_id === parseInt(entryId));
+        if (!response) {
+          console.warn(`⚠️ Team response not found for entry ${entryId}`);
+          continue;
+        }
+        
+        console.log(`✅ Found team response record:`, response);
+        
+        // Use the status/comments update method
+        const result = await sheetService.updateStatusAndComments(response.id, statusCommentsData);
+        console.log(`✅ Status/comments updated successfully for entry ${entryId}:`, result);
+        updatedCount++;
+      }
+      
+      if (updatedCount > 0) {
+        console.log(`🎉 Status/comments updated for ${updatedCount} entries!`);
+        alert(`Status and comments updated successfully for ${updatedCount} entries!`);
+        await loadSheetData(); // Reload to show updated data
+      } else {
+        alert('No status or comments to update. Please fill in some fields first.');
+      }
+    } catch (err) {
+      console.error('❌ Failed to update status/comments:', err);
+      console.error('❌ Error details:', {
+        message: err.message,
+        response: err.response?.data,
+        status: err.response?.status,
+        stack: err.stack
+      });
+      
+      // Show more specific error message
+      let errorMessage = 'Failed to update status and comments';
+      if (err.response?.data?.error) {
+        errorMessage = err.response.data.error;
+      } else if (err.message) {
+        errorMessage = err.message;
+      }
+      
+      setError(errorMessage);
+      alert(`Failed to update status and comments: ${errorMessage}`);
     }
   };
 
@@ -476,6 +595,20 @@ const TeamSheetEditor = () => {
                 <i className="fas fa-arrow-left me-1"></i>
                 Back to Sheets
               </button>
+              
+              {/* Display Mode Toggle */}
+              <button 
+                className={`btn ${displayMode === 'edited' ? 'btn-warning' : 'btn-outline-warning'}`}
+                onClick={toggleDisplayMode}
+                title={displayMode === 'all' ? 'Show only edited entries' : 'Show all entries'}
+              >
+                <i className={`fas ${displayMode === 'edited' ? 'fa-filter' : 'fa-list'}`}></i>
+                {displayMode === 'edited' ? 'Edited Only' : 'All Entries'}
+                <span className="ms-1 badge bg-secondary">
+                  {displayMode === 'edited' ? editedEntries.length : entries.length}
+                </span>
+              </button>
+              
               <button 
                 className="btn btn-outline-primary" 
                 onClick={handleSaveDraft}
@@ -483,6 +616,19 @@ const TeamSheetEditor = () => {
                 <i className="fas fa-save me-1"></i>
                 Save Draft
               </button>
+              
+              {/* Update Status/Comments button - works even after submission */}
+              {sheet.assignment_status === 'completed' && (
+                <button 
+                  className="btn btn-outline-warning" 
+                  onClick={handleUpdateStatusComments}
+                  title="Update status and comments (works even after submission)"
+                >
+                  <i className="fas fa-edit me-1"></i>
+                  Update Status/Comments
+                </button>
+              )}
+              
               <button 
                 className={`btn ${submitEnabled ? 'btn-success' : 'btn-secondary'}`}
                 onClick={handleSubmitSheet}
@@ -530,7 +676,7 @@ const TeamSheetEditor = () => {
           {sheet.assignment_status === 'completed' && (
             <div className="alert alert-success" role="alert">
               <i className="fas fa-check-circle me-2"></i>
-              This sheet has been completed and submitted.
+              This sheet has been completed and submitted. You can still update <strong>Status</strong> and <strong>Comments</strong> using the "Update Status/Comments" button.
             </div>
           )}
 
@@ -546,13 +692,24 @@ const TeamSheetEditor = () => {
               <li><strong>Estimated Time</strong> appears only when "Compensatory Controls Provided" is "Yes"</li>
               <li>Date fields will only appear when their prerequisite conditions are met</li>
               <li>Use <strong>"Save Draft"</strong> to save your progress without submitting</li>
+              {sheet.assignment_status === 'completed' && (
+                <li><strong>Status and Comments</strong> can be updated even after sheet submission using the "Update Status/Comments" button</li>
+              )}
             </ul>
           </div>
 
           {/* Entries Table */}
           <div className="card">
             <div className="card-header">
-              <h5 className="card-title mb-0">Sheet Entries</h5>
+              <h5 className="card-title mb-0">
+                Sheet Entries 
+                <span className="ms-2 badge bg-secondary">
+                  {displayMode === 'edited' ? 'Edited Only' : 'All Entries'}
+                </span>
+                <span className="ms-2 text-muted">
+                  ({getCurrentEntries().length} of {entries.length} entries)
+                </span>
+              </h5>
             </div>
             <div className="card-body p-0">
               <div className="table-responsive">
@@ -593,7 +750,7 @@ const TeamSheetEditor = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {entries.map((entry) => (
+                    {getCurrentEntries().map((entry) => (
                       <tr key={entry.id}>
                         {/* OEM/Vendor */}
                         <td style={{fontSize: '0.85rem'}}>
@@ -644,19 +801,19 @@ const TeamSheetEditor = () => {
                           <select
                             className="form-select form-select-sm"
                             style={{fontSize: '0.85rem'}}
-                            value={responses[entry.id]?.deployed_in_ke || 'N'}
-                            onChange={(e) => handleResponseChange(entry.id, 'deployed_in_ke', e.target.value)}
+                                                          value={responses[entry.original_entry_id]?.deployed_in_ke || 'N'}
+                            onChange={(e) => handleResponseChange(entry.original_entry_id, 'deployed_in_ke', e.target.value)}
                             disabled={sheet.assignment_status === 'completed'}
                           >
                             <option value="Y">Yes</option>
                             <option value="N">No</option>
                           </select>
-                          {responses[entry.id]?.deployed_in_ke === 'Y' && (
+                          {responses[entry.original_entry_id]?.deployed_in_ke === 'Y' && (
                             <input
                               type="text"
                               className="form-control form-control-sm mt-1"
-                              value={responses[entry.id]?.site || entry.location || ''}
-                              onChange={(e) => handleResponseChange(entry.id, 'site', e.target.value)}
+                              value={responses[entry.original_entry_id]?.site || entry.location || ''}
+                              onChange={(e) => handleResponseChange(entry.original_entry_id, 'site', e.target.value)}
                               disabled={sheet.assignment_status === 'completed'}
                               placeholder="Site"
                               style={{fontSize: '0.8rem'}}
@@ -668,14 +825,14 @@ const TeamSheetEditor = () => {
                         <td>
                           <div className="d-flex gap-1">
                             <div className="flex-fill">
-                              {responses[entry.id]?.deployed_in_ke === 'N' ? (
+                              {responses[entry.original_entry_id]?.deployed_in_ke === 'N' ? (
                                 <span className="text-muted small">N/A</span>
-                              ) : (responses[entry.id]?.vendor_contacted === 'Y' || responses[entry.id]?.current_status === 'In Progress') ? (
+                              ) : (responses[entry.original_entry_id]?.vendor_contacted === 'Y' || responses[entry.original_entry_id]?.current_status === 'In Progress') ? (
                                 <input
                                   type="date"
                                   className="form-control form-control-sm"
-                                  value={responses[entry.id]?.patching_est_release_date || ''}
-                                  onChange={(e) => handleResponseChange(entry.id, 'patching_est_release_date', e.target.value)}
+                                  value={responses[entry.original_entry_id]?.patching_est_release_date || ''}
+                                  onChange={(e) => handleResponseChange(entry.original_entry_id, 'patching_est_release_date', e.target.value)}
                                   disabled={sheet.assignment_status === 'completed'}
                                   style={{fontSize: '0.75rem'}}
                                 />
@@ -684,14 +841,14 @@ const TeamSheetEditor = () => {
                               )}
                             </div>
                             <div className="flex-fill">
-                              {responses[entry.id]?.deployed_in_ke === 'N' ? (
+                              {responses[entry.original_entry_id]?.deployed_in_ke === 'N' ? (
                                 <span className="text-muted small">N/A</span>
-                              ) : ['In Progress', 'Completed', 'Blocked'].includes(responses[entry.id]?.current_status) ? (
+                              ) : ['In Progress', 'Completed', 'Blocked'].includes(responses[entry.original_entry_id]?.current_status) ? (
                                 <input
                                   type="date"
                                   className="form-control form-control-sm"
-                                  value={responses[entry.id]?.implementation_date || ''}
-                                  onChange={(e) => handleResponseChange(entry.id, 'implementation_date', e.target.value)}
+                                  value={responses[entry.original_entry_id]?.implementation_date || ''}
+                                  onChange={(e) => handleResponseChange(entry.original_entry_id, 'implementation_date', e.target.value)}
                                   disabled={sheet.assignment_status === 'completed'}
                                   style={{fontSize: '0.75rem'}}
                                 />
@@ -704,27 +861,27 @@ const TeamSheetEditor = () => {
                         
                         {/* Vendor Contacted */}
                         <td>
-                          {responses[entry.id]?.deployed_in_ke === 'N' ? (
+                          {responses[entry.original_entry_id]?.deployed_in_ke === 'N' ? (
                             <span className="text-muted">N/A</span>
                           ) : (
                             <>
                               <select
                                 className="form-select form-select-sm"
                                 style={{fontSize: '0.85rem'}}
-                                value={responses[entry.id]?.vendor_contacted || ''}
-                                onChange={(e) => handleResponseChange(entry.id, 'vendor_contacted', e.target.value)}
+                                value={responses[entry.original_entry_id]?.vendor_contacted || ''}
+                                onChange={(e) => handleResponseChange(entry.original_entry_id, 'vendor_contacted', e.target.value)}
                                 disabled={sheet.assignment_status === 'completed'}
                               >
                                 <option value="">Select</option>
                                 <option value="Y">Yes</option>
                                 <option value="N">No</option>
                               </select>
-                              {responses[entry.id]?.vendor_contacted === 'Y' && (
+                              {responses[entry.original_entry_id]?.vendor_contacted === 'Y' && (
                                 <input
                                   type="date"
                                   className="form-control form-control-sm mt-1"
-                                  value={responses[entry.id]?.vendor_contact_date || ''}
-                                  onChange={(e) => handleResponseChange(entry.id, 'vendor_contact_date', e.target.value)}
+                                  value={responses[entry.original_entry_id]?.vendor_contact_date || ''}
+                                  onChange={(e) => handleResponseChange(entry.original_entry_id, 'vendor_contact_date', e.target.value)}
                                   disabled={sheet.assignment_status === 'completed'}
                                   style={{fontSize: '0.75rem'}}
                                 />
@@ -735,15 +892,15 @@ const TeamSheetEditor = () => {
                         
                         {/* Compensatory Controls */}
                         <td>
-                          {responses[entry.id]?.deployed_in_ke === 'N' ? (
+                          {responses[entry.original_entry_id]?.deployed_in_ke === 'N' ? (
                             <span className="text-muted">N/A</span>
                           ) : (
                             <>
                               <select
                                 className="form-select form-select-sm"
                                 style={{fontSize: '0.85rem'}}
-                                value={responses[entry.id]?.compensatory_controls_provided || ''}
-                                onChange={(e) => handleResponseChange(entry.id, 'compensatory_controls_provided', e.target.value)}
+                                value={responses[entry.original_entry_id]?.compensatory_controls_provided || ''}
+                                onChange={(e) => handleResponseChange(entry.original_entry_id, 'compensatory_controls_provided', e.target.value)}
                                 disabled={sheet.assignment_status === 'completed'}
                               >
                                 <option value="">Select</option>
@@ -751,14 +908,14 @@ const TeamSheetEditor = () => {
                                 <option value="N">No</option>
                                 <option value="N/A">Not Applicable</option>
                               </select>
-                              {responses[entry.id]?.compensatory_controls_provided === 'Y' && (
+                              {responses[entry.original_entry_id]?.compensatory_controls_provided === 'Y' && (
                                 <>
                                   <textarea
                                     className="form-control form-control-sm mt-1"
                                     rows="1"
                                     placeholder="Control details..."
-                                    value={responses[entry.id]?.compensatory_controls_details || ''}
-                                    onChange={(e) => handleResponseChange(entry.id, 'compensatory_controls_details', e.target.value)}
+                                    value={responses[entry.original_entry_id]?.compensatory_controls_details || ''}
+                                    onChange={(e) => handleResponseChange(entry.original_entry_id, 'compensatory_controls_details', e.target.value)}
                                     disabled={sheet.assignment_status === 'completed'}
                                     style={{fontSize: '0.75rem'}}
                                   />
@@ -766,8 +923,8 @@ const TeamSheetEditor = () => {
                                     type="text"
                                     className="form-control form-control-sm mt-1"
                                     placeholder="Est. time"
-                                    value={responses[entry.id]?.estimated_time || ''}
-                                    onChange={(e) => handleResponseChange(entry.id, 'estimated_time', e.target.value)}
+                                    value={responses[entry.original_entry_id]?.estimated_time || ''}
+                                    onChange={(e) => handleResponseChange(entry.original_entry_id, 'estimated_time', e.target.value)}
                                     disabled={sheet.assignment_status === 'completed'}
                                     style={{fontSize: '0.75rem'}}
                                   />
@@ -779,36 +936,50 @@ const TeamSheetEditor = () => {
                         
                         {/* Status */}
                         <td>
-                          {responses[entry.id]?.deployed_in_ke === 'N' ? (
+                          {responses[entry.original_entry_id]?.deployed_in_ke === 'N' ? (
                             <span className="text-muted">N/A</span>
                           ) : (
-                            <select
-                              className="form-select form-select-sm"
-                              style={{fontSize: '0.85rem'}}
-                              value={responses[entry.id]?.current_status || ''}
-                              onChange={(e) => handleResponseChange(entry.id, 'current_status', e.target.value)}
-                              disabled={sheet.assignment_status === 'completed'}
-                            >
-                              <option value="">Select Status</option>
-                              <option value="Not Started">Not Started</option>
-                              <option value="In Progress">In Progress</option>
-                              <option value="Completed">Completed</option>
-                              <option value="Blocked">Blocked</option>
-                            </select>
+                            <div>
+                              <select
+                                className={`form-select form-select-sm ${sheet.assignment_status === 'completed' ? 'border-warning' : ''}`}
+                                style={{fontSize: '0.85rem'}}
+                                value={responses[entry.original_entry_id]?.current_status || ''}
+                                onChange={(e) => handleResponseChange(entry.original_entry_id, 'current_status', e.target.value)}
+                                disabled={false} // Always allow status updates
+                              >
+                                <option value="">Select Status</option>
+                                <option value="Not Started">Not Started</option>
+                                <option value="In Progress">In Progress</option>
+                                <option value="Completed">Completed</option>
+                                <option value="Blocked">Blocked</option>
+                              </select>
+                              {sheet.assignment_status === 'completed' && (
+                                <small className="text-warning d-block mt-1">
+                                  <i className="fas fa-edit"></i> Editable after submission
+                                </small>
+                              )}
+                            </div>
                           )}
                         </td>
                         
                         {/* Comments */}
                         <td>
-                          <textarea
-                            className="form-control form-control-sm"
-                            rows="1"
-                            placeholder="Comments"
-                            value={responses[entry.id]?.comments || ''}
-                            onChange={(e) => handleResponseChange(entry.id, 'comments', e.target.value)}
-                            disabled={sheet.assignment_status === 'completed'}
-                            style={{fontSize: '0.75rem'}}
-                          />
+                          <div>
+                            <textarea
+                              className={`form-control form-control-sm ${sheet.assignment_status === 'completed' ? 'border-warning' : ''}`}
+                              rows="1"
+                              placeholder="Comments"
+                              value={responses[entry.original_entry_id]?.comments || ''}
+                              onChange={(e) => handleResponseChange(entry.original_entry_id, 'comments', e.target.value)}
+                              disabled={false} // Always allow comments updates
+                              style={{fontSize: '0.75rem'}}
+                            />
+                            {sheet.assignment_status === 'completed' && (
+                              <small className="text-warning d-block mt-1">
+                                <i className="fas fa-edit"></i> Editable after submission
+                              </small>
+                            )}
+                          </div>
                         </td>
                         
                         {/* Month/Year */}

@@ -4,8 +4,6 @@ const { auth } = require('../middlewares/auth');
 const { requireRole } = require('../middlewares/rbac');
 const NotificationService = require('../services/NotificationService');
 const SheetResponse = require('../models/SheetResponse');
-const User = require('../models/User');
-const Team = require('../models/Team');
 const db = require('../config/db');
 
 // Get team's assigned sheet entries
@@ -14,12 +12,12 @@ router.get('/sheets/:sheetId/entries', auth, async (req, res) => {
     const { sheetId } = req.params;
     const userId = req.user.id;
 
-    // Get user's team
-    const user = await User.query()
-      .findById(userId)
-      .withGraphFetched('team');
+    // Get user's team using direct database query
+    const user = await db('users')
+      .where('id', userId)
+      .first();
 
-    if (!user || !user.team) {
+    if (!user || !user.team_id) {
       return res.status(400).json({ error: 'User is not assigned to a team' });
     }
 
@@ -28,7 +26,7 @@ router.get('/sheets/:sheetId/entries', auth, async (req, res) => {
     const responses = await db('sheet_responses')
       .join('team_sheets', 'sheet_responses.team_sheet_id', 'team_sheets.id')
       .where('team_sheets.sheet_id', sheetId)
-      .where('team_sheets.team_id', user.team.id)
+      .where('team_sheets.team_id', user.team_id)
       .select('sheet_responses.*')
       .orderBy('sheet_responses.created_at', 'desc');
 
@@ -62,6 +60,31 @@ router.get('/sheets/:sheetId/entries', auth, async (req, res) => {
   } catch (error) {
     console.error('Error fetching team sheet entries:', error);
     res.status(500).json({ error: 'Failed to fetch team sheet entries' });
+  }
+});
+
+// Get team sheet data with only edited entries
+router.get('/sheets/:sheetId/edited-entries', auth, async (req, res) => {
+  try {
+    const { sheetId } = req.params;
+    const userId = req.user.id;
+
+    // Get user's team using direct database query
+    const user = await db('users')
+      .where('id', userId)
+      .first();
+
+    if (!user || !user.team_id) {
+      return res.status(400).json({ error: 'User is not assigned to a team' });
+    }
+
+    const SheetService = require('../services/SheetService');
+    const teamSheetData = await SheetService.getTeamSheetData(sheetId, user.team_id, true); // true = showOnlyEdited
+
+    res.json(teamSheetData);
+  } catch (error) {
+    console.error('Error fetching edited team sheet entries:', error);
+    res.status(500).json({ error: 'Failed to fetch edited team sheet entries' });
   }
 });
 
@@ -111,6 +134,15 @@ router.put('/responses/:responseId/status', auth, async (req, res) => {
 
     // Update the response
     const updatedResponse = await SheetResponse.update(responseId, filteredUpdateData);
+
+    // Track the edit for edited entries filter
+    try {
+      const EditedEntriesTrackingService = require('../services/EditedEntriesTrackingService');
+      await EditedEntriesTrackingService.trackEntryEdit(userId, response.sheet_id, response.original_entry_id, responseId);
+      console.log(`✅ Tracked edit for entry ${response.original_entry_id}`);
+    } catch (trackingError) {
+      console.error('❌ Failed to track edit:', trackingError);
+    }
 
     // Create notification for admins about any update activity
     try {
@@ -178,6 +210,144 @@ router.put('/responses/:responseId/status', auth, async (req, res) => {
   }
 });
 
+// Update status and comments only (works even after submission)
+router.put('/responses/:responseId/status-comments', auth, async (req, res) => {
+  try {
+    console.log('🔄 Status/Comments update request received:', {
+      responseId: req.params.responseId,
+      body: req.body,
+      userId: req.user.id,
+      teamId: req.user.team_id
+    });
+
+    const { responseId } = req.params;
+    const updateData = req.body;
+    const userId = req.user.id;
+    const teamId = req.user.team_id;
+
+    if (!teamId) {
+      console.log('❌ No team ID found for user');
+      return res.status(400).json({ error: 'User is not assigned to a team' });
+    }
+
+    // Verify the response belongs to the user's team
+    const response = await db('sheet_responses')
+      .join('team_sheets', 'sheet_responses.team_sheet_id', 'team_sheets.id')
+      .where('sheet_responses.id', responseId)
+      .andWhere('team_sheets.team_id', teamId)
+      .select('sheet_responses.*', 'team_sheets.sheet_id')
+      .first();
+
+    console.log('🔍 Found response:', response);
+
+    if (!response) {
+      console.log('❌ Response not found or access denied');
+      return res.status(404).json({ error: 'Response not found or access denied' });
+    }
+
+    // Only allow status and comments updates
+    const allowedFields = ['status', 'current_status', 'comments'];
+
+    const filteredUpdateData = {};
+    Object.keys(updateData).forEach(key => {
+      if (allowedFields.includes(key) && updateData[key] !== undefined) {
+        // Convert empty strings to null for database compatibility
+        filteredUpdateData[key] = updateData[key] === "" ? null : updateData[key];
+      }
+    });
+
+    console.log('🔧 Filtered update data (status/comments only):', filteredUpdateData);
+
+    // Add updated_by and timestamp
+    filteredUpdateData.updated_by = userId;
+    filteredUpdateData.updated_at = db.fn.now();
+
+    console.log('📝 Final update data:', filteredUpdateData);
+
+    // Update the response using direct database query
+    try {
+      const result = await db('sheet_responses')
+        .where('id', responseId)
+        .update(filteredUpdateData)
+        .returning('*');
+      
+      const updatedResponse = result[0];
+      console.log('✅ Response updated successfully:', updatedResponse);
+
+      // Track the entry edit
+      try {
+        const EditedEntriesTrackingService = require('../services/EditedEntriesTrackingService');
+        await EditedEntriesTrackingService.ensureTableExists();
+        
+        if (updatedResponse.original_entry_id) {
+          await EditedEntriesTrackingService.trackEntryEdit(
+            userId, 
+            response.sheet_id, 
+            updatedResponse.original_entry_id, 
+            responseId
+          );
+          console.log('✅ Entry edit tracked successfully');
+        }
+      } catch (trackingError) {
+        console.error('❌ Failed to track entry edit:', trackingError);
+        // Don't fail the request if tracking fails
+      }
+
+                        // Create notification for admins about status/comments update
+                  try {
+                    const responseWithDetails = await db('sheet_responses as sr')
+                      .join('team_sheets as ts', 'sr.team_sheet_id', 'ts.id')
+                      .join('teams as t', 'ts.team_id', 't.id')
+                      .join('sheets as s', 'ts.sheet_id', 's.id')
+                      .join('users as u', 'u.id', userId)
+                      .where('sr.id', responseId)
+                      .select(
+                        't.name as team_name',
+                        's.title as sheet_title',
+                        'u.username as updated_by_name'
+                      )
+                      .first();
+
+                    if (responseWithDetails) {
+                      // Create notification for all admin users
+                      const adminUsers = await db('users as u')
+                        .join('roles as r', 'u.role_id', 'r.id')
+                        .where('r.name', 'admin')
+                        .select('u.id');
+
+                      for (const adminUser of adminUsers) {
+                        await NotificationService.createNotification({
+                          user_id: adminUser.id,
+                          type: 'team_status_comments_updated',
+                          title: 'Status/Comments Updated',
+                          message: `${responseWithDetails.updated_by_name} from ${responseWithDetails.team_name} updated status/comments in sheet "${responseWithDetails.sheet_title}"`,
+                          data: {
+                            response_id: responseId,
+                            team_id: teamId,
+                            team_name: responseWithDetails.team_name,
+                            sheet_id: response.sheet_id,
+                            action: 'status_comments_updated',
+                            updated_fields: Object.keys(filteredUpdateData).filter(key => !['updated_by', 'updated_at'].includes(key))
+                          }
+                        });
+                      }
+                    }
+                  } catch (notificationError) {
+                    console.error('Failed to create status/comments notification:', notificationError);
+                    // Don't fail the request if notification fails
+                  }
+
+      res.json(updatedResponse);
+    } catch (updateError) {
+      console.error('❌ Failed to update response:', updateError);
+      res.status(500).json({ error: 'Failed to update response' });
+    }
+  } catch (error) {
+    console.error('Error updating response status/comments:', error);
+    res.status(500).json({ error: 'Failed to update response status/comments' });
+  }
+});
+
 // Save draft - accepts all form fields
 router.put('/responses/:responseId/draft', auth, async (req, res) => {
   try {
@@ -203,7 +373,7 @@ router.put('/responses/:responseId/draft', auth, async (req, res) => {
       .join('team_sheets', 'sheet_responses.team_sheet_id', 'team_sheets.id')
       .where('sheet_responses.id', responseId)
       .andWhere('team_sheets.team_id', teamId)
-      .select('sheet_responses.*')
+      .select('sheet_responses.*', 'team_sheets.sheet_id')
       .first();
 
     console.log('🔍 Found response:', response);
@@ -246,6 +416,25 @@ router.put('/responses/:responseId/draft', auth, async (req, res) => {
       
       const updatedResponse = result[0];
       console.log('✅ Response updated successfully:', updatedResponse);
+
+      // Track the entry edit
+      try {
+        const EditedEntriesTrackingService = require('../services/EditedEntriesTrackingService');
+        await EditedEntriesTrackingService.ensureTableExists();
+        
+        if (updatedResponse.original_entry_id) {
+          await EditedEntriesTrackingService.trackEntryEdit(
+            userId, 
+            response.sheet_id, 
+            updatedResponse.original_entry_id, 
+            responseId
+          );
+          console.log('✅ Entry edit tracked successfully');
+        }
+      } catch (trackingError) {
+        console.error('❌ Failed to track entry edit:', trackingError);
+        // Don't fail the request if tracking fails
+      }
 
       // Update team sheet status to in_progress if not already
       await db('team_sheets')
@@ -312,18 +501,19 @@ router.put('/responses/:responseId/complete', auth, async (req, res) => {
     const userId = req.user.id;
 
     // Get user's team
-    const user = await User.query()
-      .findById(userId)
-      .withGraphFetched('team');
+    const user = await db('users')
+      .where('id', userId)
+      .first();
 
-    if (!user || !user.team) {
+    if (!user || !user.team_id) {
       return res.status(400).json({ error: 'User is not assigned to a team' });
     }
 
     // Verify the response belongs to the user's team
-    const response = await SheetResponse.query()
-      .findById(responseId)
-      .where('team_id', user.team.id);
+    const response = await db('sheet_responses')
+      .where('id', responseId)
+      .andWhere('team_id', user.team_id)
+      .first();
 
     if (!response) {
       return res.status(404).json({ error: 'Response not found or access denied' });
@@ -349,8 +539,8 @@ router.put('/responses/:responseId/complete', auth, async (req, res) => {
         type: 'entry_completed',
         data: {
           response_id: responseId,
-          team_id: user.team.id,
-          team_name: user.team.name,
+          team_id: user.team_id,
+          team_name: user.team_name,
           sheet_id: response.sheet_id,
           product_name: responseWithDetails.originalEntry?.product_name,
           cve: responseWithDetails.originalEntry?.cve,
@@ -378,11 +568,11 @@ router.put('/sheets/:sheetId/complete', auth, async (req, res) => {
     const userId = req.user.id;
 
     // Get user's team
-    const user = await User.query()
-      .findById(userId)
-      .withGraphFetched('team');
+    const user = await db('users')
+      .where('id', userId)
+      .first();
 
-    if (!user || !user.team) {
+    if (!user || !user.team_id) {
       return res.status(400).json({ error: 'User is not assigned to a team' });
     }
 
@@ -390,7 +580,7 @@ router.put('/sheets/:sheetId/complete', auth, async (req, res) => {
       // Get all team responses for this sheet
       const responses = await SheetResponse.query(trx)
         .where('sheet_id', sheetId)
-        .where('team_id', user.team.id);
+        .where('team_id', user.team_id);
 
       if (responses.length === 0) {
         throw new Error('No responses found for this team and sheet');
@@ -399,7 +589,7 @@ router.put('/sheets/:sheetId/complete', auth, async (req, res) => {
       // Update all responses to completed status
       await SheetResponse.query(trx)
         .where('sheet_id', sheetId)
-        .where('team_id', user.team.id)
+        .where('team_id', user.team_id)
         .patch({
           status: 'completed',
           completion_notes: completion_notes || 'Bulk completion by team',
@@ -411,18 +601,18 @@ router.put('/sheets/:sheetId/complete', auth, async (req, res) => {
       try {
         const sheet = await SheetResponse.query(trx)
           .where('sheet_id', sheetId)
-          .where('team_id', user.team.id)
+          .where('team_id', user.team_id)
           .first()
           .withGraphFetched('sheet');
 
         await NotificationService.createNotification({
           title: `Team Sheet Completed: ${sheet?.sheet?.name || 'Sheet'}`,
-          message: `Team "${user.team.name}" has completed all entries for sheet "${sheet?.sheet?.name}". Total entries: ${responses.length}`,
+          message: `Team "${user.team_name}" has completed all entries for sheet "${sheet?.sheet?.name}". Total entries: ${responses.length}`,
           type: 'team_sheet_completed',
           data: {
             sheet_id: sheetId,
-            team_id: user.team.id,
-            team_name: user.team.name,
+            team_id: user.team_id,
+            team_name: user.team_name,
             sheet_name: sheet?.sheet?.name,
             total_entries: responses.length,
             completion_notes: completion_notes
@@ -436,7 +626,7 @@ router.put('/sheets/:sheetId/complete', auth, async (req, res) => {
 
     res.json({ 
       success: true, 
-      message: `All entries for sheet marked as completed by team ${user.team.name}` 
+      message: `All entries for sheet marked as completed by team ${user.team_name}` 
     });
   } catch (error) {
     console.error('Error completing team sheet:', error);
@@ -559,18 +749,18 @@ router.get('/my-sheets', auth, async (req, res) => {
     const userId = req.user.id;
 
     // Get user's team
-    const user = await User.query()
-      .findById(userId)
-      .withGraphFetched('team');
+    const user = await db('users')
+      .where('id', userId)
+      .first();
 
-    if (!user || !user.team) {
+    if (!user || !user.team_id) {
       return res.status(400).json({ error: 'User is not assigned to a team' });
     }
 
     // Get team's sheet assignments with progress information
     const teamSheets = await SheetResponse.query()
       .select('sheet_id')
-      .where('team_id', user.team.id)
+      .where('team_id', user.team_id)
       .groupBy('sheet_id')
       .withGraphFetched('sheet')
       .modifyGraph('sheet', builder => {
@@ -582,7 +772,7 @@ router.get('/my-sheets', auth, async (req, res) => {
       teamSheets.map(async (teamSheet) => {
         const responses = await SheetResponse.query()
           .where('sheet_id', teamSheet.sheet_id)
-          .where('team_id', user.team.id);
+          .where('team_id', user.team_id);
 
         const completedResponses = responses.filter(r => 
           ['completed', 'patched', 'closed'].includes(r.status?.toLowerCase())
@@ -613,7 +803,7 @@ router.get('/progress/:teamId?', auth, requireRole('admin'), async (req, res) =>
   try {
     const { teamId } = req.params;
     
-    let teamsQuery = Team.query().withGraphFetched('users');
+    let teamsQuery = db('teams').withGraphFetched('users');
     
     if (teamId) {
       teamsQuery = teamsQuery.where('id', teamId);

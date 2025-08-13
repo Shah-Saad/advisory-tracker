@@ -103,6 +103,16 @@ const sheetService = {
     }
   },
 
+  // Update status and comments only (works even after sheet submission)
+  updateStatusAndComments: async (responseId, data) => {
+    try {
+      const response = await apiClient.put(`/team-responses/responses/${responseId}/status-comments`, data);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to update status and comments' };
+    }
+  },
+
   // Save draft - new method for saving all form data
   saveTeamResponseDraft: async (responseId, data) => {
     try {
@@ -199,6 +209,16 @@ const sheetService = {
       return response.data;
     } catch (error) {
       throw error.response?.data || { message: 'Failed to fetch team sheet data' };
+    }
+  },
+
+  // Get only edited entries for a team sheet
+  getEditedEntries: async (sheetId) => {
+    try {
+      const response = await apiClient.get(`/team-responses/sheets/${sheetId}/edited-entries`);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to fetch edited entries' };
     }
   },
 

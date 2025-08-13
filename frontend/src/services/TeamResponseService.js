@@ -23,7 +23,7 @@ class TeamResponseService {
 
   // Get team sheet entries for response
   static async getTeamSheetEntries(sheetId, teamId) {
-    const response = await fetch(`/api/team-responses/sheets/${sheetId}/entries`, {
+    const response = await fetch(`/api/sheets/${sheetId}/team-id/${teamId}`, {
       headers: {
         'Authorization': `Bearer ${this.getToken()}`,
         'Content-Type': 'application/json'
@@ -35,7 +35,9 @@ class TeamResponseService {
       throw new Error(error.message || 'Failed to fetch team sheet entries');
     }
 
-    return await response.json();
+    const data = await response.json();
+    // Extract the responses array from the team sheet data
+    return data.responses || [];
   }
 
   // Update team entry status and comments

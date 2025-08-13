@@ -26,7 +26,13 @@ const Login = ({ onLogin }) => {
     try {
       const response = await authService.login(credentials.email, credentials.password);
       onLogin(response.user);
-      navigate('/dashboard');
+      
+      // Redirect based on user role
+      if (response.user.role === 'admin') {
+        navigate('/dashboard');
+      } else {
+        navigate('/team-dashboard');
+      }
     } catch (error) {
       setError(error.message || 'Login failed');
     } finally {

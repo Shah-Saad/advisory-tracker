@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import TeamResponseService from '../../services/TeamResponseService';
+import sheetService from '../../services/sheetService';
 import { toast } from 'react-toastify';
 
 const MyTeamSheets = ({ user }) => {
+  const navigate = useNavigate();
   const [sheets, setSheets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -29,6 +31,25 @@ const MyTeamSheets = ({ user }) => {
       toast.error('Failed to load team sheets');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Handle status and comments updates for completed sheets
+  const handleUpdateStatusComments = async (sheetId) => {
+    try {
+      console.log('🔄 Navigating to sheet editor for status/comments update...');
+      
+      // Navigate to the sheet editor where the user can update status and comments
+      navigate(`/team-sheets/${sheetId}/respond`);
+      
+      // Show a toast message to guide the user
+      toast.info('Navigate to the sheet editor to update status and comments. Use the "Update Status/Comments" button there.', {
+        autoClose: 5000
+      });
+      
+    } catch (err) {
+      console.error('❌ Failed to navigate to sheet editor:', err);
+      toast.error('Failed to open sheet editor');
     }
   };
 
@@ -189,7 +210,7 @@ const MyTeamSheets = ({ user }) => {
                       </div>
                     </div>
                     <div className="card-footer">
-                      <div className="d-grid">
+                      <div className="d-grid gap-2">
                         <Link 
                           to={`/team-sheets/${sheet.id}/respond`}
                           className={`btn ${sheet.is_completed ? 'btn-outline-success' : 'btn-primary'}`}
@@ -197,6 +218,18 @@ const MyTeamSheets = ({ user }) => {
                           <i className="fas fa-edit me-2"></i>
                           {sheet.is_completed ? 'View Responses' : 'Work on Sheet'}
                         </Link>
+                        
+                        {/* Update Status/Comments button for completed sheets */}
+                        {sheet.is_completed && (
+                          <button 
+                            className="btn btn-outline-warning btn-sm"
+                            onClick={() => handleUpdateStatusComments(sheet.id)}
+                            title="Update status and comments (works even after submission)"
+                          >
+                            <i className="fas fa-edit me-1"></i>
+                            Update Status/Comments
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -219,6 +252,7 @@ const MyTeamSheets = ({ user }) => {
             <li>Update the status of each entry as you work on patching vulnerabilities</li>
             <li>Add comments to track your progress and communicate with administrators</li>
             <li>Mark entries as completed when patches are applied</li>
+            <li>For completed sheets, use "Update Status/Comments" to modify status and comments even after submission</li>
             <li>Your progress is automatically tracked and reported to administrators</li>
           </ul>
         </div>

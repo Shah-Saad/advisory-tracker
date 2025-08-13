@@ -40,7 +40,7 @@ const NotificationPanel = () => {
         headers: { Authorization: `Bearer ${token}` }
       });
       console.log('Fetched notifications:', response.data);
-      setNotifications(response.data.data);
+      setNotifications(response.data);
       setError(null);
     } catch (error) {
       console.error('Error fetching notifications:', error);
@@ -53,13 +53,14 @@ const NotificationPanel = () => {
   const fetchUnreadCount = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.get('http://localhost:3000/api/notifications/stats', {
+      const response = await axios.get('http://localhost:3000/api/notifications/unread-count', {
         headers: { Authorization: `Bearer ${token}` }
       });
-      console.log('Fetched stats:', response.data);
-      setUnreadCount(response.data.data.unread);
+      console.log('Fetched unread count:', response.data);
+      setUnreadCount(response.data.count || 0);
     } catch (error) {
       console.error('Error fetching unread count:', error);
+      setUnreadCount(0);
     }
   };
 
@@ -221,11 +222,11 @@ const NotificationPanel = () => {
                 notifications.map(notification => (
                   <div 
                     key={notification.id}
-                    className={`notification-item p-3 border-bottom ${!notification.is_read ? 'bg-light' : ''}`}
+                    className={`notification-item p-3 border-bottom ${!notification.read_at ? 'bg-light' : ''}`}
                   >
                     <div className="d-flex">
                       <div className="flex-shrink-0 me-2">
-                        <div className={`rounded-circle d-flex align-items-center justify-content-center ${!notification.is_read ? 'bg-primary' : 'bg-secondary'}`} style={{ width: '8px', height: '8px' }}>
+                        <div className={`rounded-circle d-flex align-items-center justify-content-center ${!notification.read_at ? 'bg-primary' : 'bg-secondary'}`} style={{ width: '8px', height: '8px' }}>
                         </div>
                       </div>
                       <div className="flex-grow-1">
@@ -238,38 +239,34 @@ const NotificationPanel = () => {
                           </small>
                         </div>
                         <p className="mb-2 text-muted" style={{ fontSize: '0.8rem' }}>
-                          <strong>{notification.user_username}</strong> {notification.message}
+                          {notification.message}
                         </p>
                         
                         {/* Entry Details */}
-                        {notification.entry_id && (
+                        {notification.data && (
                           <div className="entry-details mb-2">
                             <div className="d-flex flex-column gap-1">
-                              {notification.product_name && (
+                              {notification.data.sheet_title && (
                                 <div className="d-flex">
-                                  <strong className="text-dark me-2" style={{ fontSize: '0.75rem', minWidth: '60px' }}>Product:</strong>
+                                  <strong className="text-dark me-2" style={{ fontSize: '0.75rem', minWidth: '60px' }}>Sheet:</strong>
                                   <span className="text-primary" style={{ fontSize: '0.75rem' }}>
-                                    {notification.product_name}
+                                    {notification.data.sheet_title}
                                   </span>
                                 </div>
                               )}
-                              {notification.oem_vendor && (
+                              {notification.data.team_name && (
                                 <div className="d-flex">
-                                  <strong className="text-dark me-2" style={{ fontSize: '0.75rem', minWidth: '60px' }}>Vendor:</strong>
+                                  <strong className="text-dark me-2" style={{ fontSize: '0.75rem', minWidth: '60px' }}>Team:</strong>
                                   <span className="text-muted" style={{ fontSize: '0.75rem' }}>
-                                    {notification.oem_vendor}
+                                    {notification.data.team_name}
                                   </span>
                                 </div>
                               )}
-                              {notification.risk_level && (
+                              {notification.data.action && (
                                 <div className="d-flex">
-                                  <strong className="text-dark me-2" style={{ fontSize: '0.75rem', minWidth: '60px' }}>Risk:</strong>
-                                  <span className={`badge badge-sm ${
-                                    notification.risk_level === 'Critical' ? 'bg-danger' :
-                                    notification.risk_level === 'High' ? 'bg-warning' :
-                                    notification.risk_level === 'Medium' ? 'bg-info' : 'bg-success'
-                                  }`} style={{ fontSize: '0.65rem' }}>
-                                    {notification.risk_level}
+                                  <strong className="text-dark me-2" style={{ fontSize: '0.75rem', minWidth: '60px' }}>Action:</strong>
+                                  <span className="text-info" style={{ fontSize: '0.75rem' }}>
+                                    {notification.data.action}
                                   </span>
                                 </div>
                               )}
@@ -280,23 +277,23 @@ const NotificationPanel = () => {
                         {/* Action Buttons */}
                         <div className="d-flex justify-content-between align-items-center mt-2">
                           <div>
-                            {notification.entry_id && (
+                            {notification.data && notification.data.sheet_id && (
                               <button
                                 className="btn btn-sm btn-outline-primary me-2"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  // Navigate to entries page with filter for this entry
-                                  window.open(`/entries?highlight=${notification.entry_id}`, '_blank');
+                                  // Navigate to admin team sheets page
+                                  window.open(`/admin/team-sheets/${notification.data.sheet_id}`, '_blank');
                                 }}
                                 style={{ fontSize: '0.7rem', padding: '2px 8px' }}
                               >
                                 <i className="fas fa-eye me-1"></i>
-                                View Entry
+                                View Sheet
                               </button>
                             )}
                           </div>
                           <div>
-                            {!notification.is_read && (
+                            {!notification.read_at && (
                               <button
                                 className="btn btn-sm btn-link text-primary p-0"
                                 onClick={(e) => {
