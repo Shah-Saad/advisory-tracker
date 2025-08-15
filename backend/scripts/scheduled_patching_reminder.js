@@ -65,7 +65,7 @@ async function sendScheduledPatchingReminders() {
         };
 
         await NotificationService.createNotification({
-          user_id: admin.id,
+          admin_id: admin.id,
           type: 'patching_reminder',
           title: 'Patching Reminder - Action Required',
           message: `Entry "${entry.product_name}" (${entry.oem_vendor}) from ${entry.team_name} is due for patching today. Please check if the status should be updated to "Completed" or if a new patching date is needed.`,

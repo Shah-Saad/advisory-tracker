@@ -119,7 +119,7 @@ async function checkImplementationDates() {
           try {
             // Create notification for admin
             await NotificationService.createNotification({
-              user_id: admin.id,
+              admin_id: admin.id,
               type: 'patching_reminder_admin',
               title: 'Patching Reminder - Admin Alert',
               message: `Team ${teamData.team_name} has ${teamData.responses.length} patching task(s) with implementation date today in sheet "${teamData.responses[0].sheet_title}".`,

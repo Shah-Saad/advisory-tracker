@@ -321,7 +321,7 @@ router.put('/responses/:responseId/status-comments', auth, async (req, res) => {
 
                       for (const adminUser of adminUsers) {
                         await NotificationService.createNotification({
-                          user_id: adminUser.id,
+                          admin_id: adminUser.id,
                           type: 'team_status_comments_updated',
                           title: 'Status/Comments Updated',
                           message: `${responseWithDetails.updated_by_name} from ${responseWithDetails.team_name} updated status/comments in sheet "${responseWithDetails.sheet_title}"`,

@@ -383,7 +383,7 @@ class SheetService {
           for (const admin of admins) {
             console.log(`📝 Creating notification for admin ${admin.id} for entry ${entryId}...`);
             await NotificationService.createNotification({
-              user_id: admin.id, // Use admin.id as user_id for admin notifications
+              admin_id: admin.id, // Use admin_id for admin notifications
               type: 'entry_submitted',
               title: `Entry Submitted: ${entryDetails.product_name || 'Product'}`,
               message: `${user.username || user.email} from ${team.name} team has submitted entry "${entryDetails.product_name}" (CVE: ${entryDetails.cve || 'N/A'}) for sheet "${sheet.title}"`,
