@@ -77,6 +77,8 @@ class EditedEntriesTrackingService {
    */
   static async getTeamEditedEntryIds(teamId, sheetId) {
     try {
+      console.log(`🔍 Getting edited entry IDs for team ${teamId}, sheet ${sheetId}`);
+      
       const trackingRecords = await db('edited_entries_tracking as eet')
         .join('users as u', 'eet.user_id', 'u.id')
         .join('sheet_entries as se', 'eet.entry_id', 'se.id')
@@ -87,7 +89,10 @@ class EditedEntriesTrackingService {
         })
         .select('eet.entry_id');
 
-      return [...new Set(trackingRecords.map(record => record.entry_id))];
+      const editedEntryIds = [...new Set(trackingRecords.map(record => record.entry_id))];
+      console.log(`🔍 Found ${editedEntryIds.length} edited entries:`, editedEntryIds);
+      
+      return editedEntryIds;
     } catch (error) {
       console.error('Error getting team edited entry IDs:', error);
       return [];

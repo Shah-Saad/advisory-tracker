@@ -225,6 +225,8 @@ router.put('/responses/:responseId/status-comments', auth, async (req, res) => {
     const userId = req.user.id;
     const teamId = req.user.team_id;
 
+    console.log('🔍 Parsed parameters:', { responseId, userId, teamId });
+
     if (!teamId) {
       console.log('❌ No team ID found for user');
       return res.status(400).json({ error: 'User is not assigned to a team' });
@@ -239,14 +241,16 @@ router.put('/responses/:responseId/status-comments', auth, async (req, res) => {
       .first();
 
     console.log('🔍 Found response:', response);
+    console.log('🔍 Response ID from params:', responseId);
+    console.log('🔍 Response ID from database:', response?.id);
 
     if (!response) {
       console.log('❌ Response not found or access denied');
       return res.status(404).json({ error: 'Response not found or access denied' });
     }
 
-    // Only allow status and comments updates
-    const allowedFields = ['status', 'current_status', 'comments'];
+    // Allow status, comments, and implementation date updates
+    const allowedFields = ['status', 'current_status', 'comments', 'implementation_date'];
 
     const filteredUpdateData = {};
     Object.keys(updateData).forEach(key => {
@@ -363,6 +367,8 @@ router.put('/responses/:responseId/draft', auth, async (req, res) => {
     const userId = req.user.id;
     const teamId = req.user.team_id;
 
+    console.log('🔍 Parsed parameters:', { responseId, userId, teamId });
+
     if (!teamId) {
       console.log('❌ No team ID found for user');
       return res.status(400).json({ error: 'User is not assigned to a team' });
@@ -377,6 +383,8 @@ router.put('/responses/:responseId/draft', auth, async (req, res) => {
       .first();
 
     console.log('🔍 Found response:', response);
+    console.log('🔍 Response ID from params:', responseId);
+    console.log('🔍 Response ID from database:', response?.id);
 
     if (!response) {
       console.log('❌ Response not found or access denied');

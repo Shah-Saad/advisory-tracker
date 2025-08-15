@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import sheetService from '../../services/sheetService';
 import authService from '../../services/authService';
 
 const TeamSheetEditor = () => {
   const { sheetId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const [sheet, setSheet] = useState(null);
   const [entries, setEntries] = useState([]);
   const [responses, setResponses] = useState({});
@@ -19,6 +20,24 @@ const TeamSheetEditor = () => {
   const [lastSaved, setLastSaved] = useState(null);
   const [editedEntries, setEditedEntries] = useState([]);
   const [displayMode, setDisplayMode] = useState('all'); // 'all' or 'edited'
+  const [isUpdateMode, setIsUpdateMode] = useState(false);
+  const [highlightedEntryId, setHighlightedEntryId] = useState(null);
+
+  // Handle URL parameters for entry highlighting
+  useEffect(() => {
+    const searchParams = new URLSearchParams(location.search);
+    const highlightEntryId = searchParams.get('highlight_entry');
+    if (highlightEntryId) {
+      setHighlightedEntryId(parseInt(highlightEntryId));
+      // Scroll to the highlighted entry after a short delay to ensure data is loaded
+      setTimeout(() => {
+        const element = document.getElementById(`entry-${highlightEntryId}`);
+        if (element) {
+          element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 1000);
+    }
+  }, [location.search]);
 
   // Real-time sync for collaborative editing
   useEffect(() => {
@@ -77,7 +96,7 @@ const TeamSheetEditor = () => {
     };
   }, [user]);
 
-  const loadSheetData = useCallback(async () => {
+  const loadSheetData = useCallback(async (showOnlyEdited = false) => {
     try {
       setLoading(true);
       setError('');
@@ -91,14 +110,31 @@ const TeamSheetEditor = () => {
       }
       
       // Get team-specific sheet data
-      const teamSheetData = await sheetService.getTeamSheetData(sheetId, teamId);
+      const teamSheetData = await sheetService.getTeamSheetData(sheetId, teamId, showOnlyEdited);
       setSheet({
         ...teamSheetData.sheet,
         assignment_status: teamSheetData.assignment_status,
         assigned_at: teamSheetData.assigned_at,
         completed_at: teamSheetData.submitted_at
       });
-      setEntries(teamSheetData.responses);
+      
+      // Check if we're in update mode (completed sheet)
+      const isCompleted = teamSheetData.assignment_status === 'completed';
+      setIsUpdateMode(isCompleted);
+      
+      // Set entries based on whether we're in update mode
+      if (isCompleted && showOnlyEdited) {
+        // In update mode, use the filtered entries from the backend
+        const updateModeEntries = teamSheetData.entries || teamSheetData.responses;
+        setEntries(updateModeEntries);
+        console.log('🔄 Update mode: Showing only edited entries');
+        console.log('🔄 Update mode entries count:', updateModeEntries.length);
+      } else {
+        // Normal mode, use all responses
+        setEntries(teamSheetData.responses);
+        console.log('🔄 Normal mode: Showing all entries');
+        console.log('🔄 Normal mode entries count:', teamSheetData.responses.length);
+      }
       
       // Initialize responses object from team responses
       const initialResponses = {};
@@ -145,9 +181,43 @@ const TeamSheetEditor = () => {
   }, [sheetId]);
 
   useEffect(() => {
-    loadSheetData();
+    // First load to get sheet status
+    const initialLoad = async () => {
+      try {
+        const currentUser = authService.getCurrentUser();
+        const teamId = currentUser?.team_id;
+        
+        if (!teamId) {
+          throw new Error('User is not assigned to a team');
+        }
+        
+        // Get sheet data to check if it's completed
+        const teamSheetData = await sheetService.getTeamSheetData(sheetId, teamId, false);
+        const isCompleted = teamSheetData.assignment_status === 'completed';
+        
+        if (isCompleted) {
+          console.log('🔄 Sheet is completed, loading in update mode');
+          // Load with only edited entries
+          await loadSheetData(true);
+        } else {
+          console.log('🔄 Sheet is not completed, loading in normal mode');
+          // Load with all entries
+          await loadSheetData(false);
+        }
+      } catch (err) {
+        console.error('Failed to determine sheet mode:', err);
+        // Fallback to normal load
+        await loadSheetData(false);
+      }
+    };
+    
+    initialLoad();
     setUser(authService.getCurrentUser());
   }, [sheetId, loadSheetData]);
+
+
+
+
 
   // Timer effect for submit button availability
   useEffect(() => {
@@ -245,9 +315,21 @@ const TeamSheetEditor = () => {
 
   // Get current entries to display based on mode
   const getCurrentEntries = () => {
+    // If we're in update mode (completed sheet), always use the filtered entries from backend
+    if (isUpdateMode) {
+      console.log('🔄 Update mode: Using entries array with', entries.length, 'entries');
+      if (entries.length > 0) {
+        console.log('🔄 First few entries:', entries.slice(0, 3).map(e => ({ id: e.id, product_name: e.product_name })));
+      }
+      return entries;
+    }
+    
+    // Otherwise, use the display mode logic
     if (displayMode === 'edited') {
+      console.log('🔄 Edited mode: Using editedEntries array with', editedEntries.length, 'entries');
       return editedEntries;
     }
+    console.log('🔄 Normal mode: Using entries array with', entries.length, 'entries');
     return entries;
   };
 
@@ -272,9 +354,22 @@ const TeamSheetEditor = () => {
       }
       
       console.log(`✅ Found team response record for auto-save:`, response);
+      console.log(`🔍 Response ID debug:`, {
+        response_id: response.response_id,
+        id: response.id,
+        original_entry_id: response.original_entry_id
+      });
+      
+      // Use response_id if available (update mode), otherwise use id (normal mode)
+      const responseId = response.response_id || response.id;
+      if (!responseId) {
+        throw new Error('Response ID not found');
+      }
+      
+      console.log(`🔍 Using response ID: ${responseId} for auto-save`);
       
       // Use the new draft saving method
-      const result = await sheetService.saveTeamResponseDraft(response.id, responseData);
+      const result = await sheetService.saveTeamResponseDraft(responseId, responseData);
       console.log(`✅ Auto-save successful for entry ${entryId}:`, result);
       
       setLastSaved(new Date());
@@ -436,8 +531,15 @@ const TeamSheetEditor = () => {
         
         console.log(`✅ Found team response record:`, response);
         
+        // Use response_id if available, otherwise fall back to id
+        const responseId = response.response_id || response.id;
+        if (!responseId) {
+          console.warn(`⚠️ Response ID not found for entry ${entryId}`);
+          continue;
+        }
+        
         // Use the new draft saving method
-        const result = await sheetService.saveTeamResponseDraft(response.id, responseData);
+        const result = await sheetService.saveTeamResponseDraft(responseId, responseData);
         console.log(`✅ Draft saved successfully for entry ${entryId}:`, result);
       }
       
@@ -482,14 +584,15 @@ const TeamSheetEditor = () => {
       for (const entryId in responses) {
         const responseData = responses[entryId];
         
-        // Only update status and comments fields
+        // Update status, comments, and implementation date fields
         const statusCommentsData = {
           current_status: responseData.current_status,
-          comments: responseData.comments
+          comments: responseData.comments,
+          implementation_date: responseData.implementation_date
         };
         
-        // Skip if no status or comments to update
-        if (!statusCommentsData.current_status && !statusCommentsData.comments) {
+        // Skip if no status, comments, or implementation date to update
+        if (!statusCommentsData.current_status && !statusCommentsData.comments && !statusCommentsData.implementation_date) {
           continue;
         }
         
@@ -504,18 +607,25 @@ const TeamSheetEditor = () => {
         
         console.log(`✅ Found team response record:`, response);
         
+        // Use response_id if available, otherwise fall back to id
+        const responseId = response.response_id || response.id;
+        if (!responseId) {
+          console.warn(`⚠️ Response ID not found for entry ${entryId}`);
+          continue;
+        }
+        
         // Use the status/comments update method
-        const result = await sheetService.updateStatusAndComments(response.id, statusCommentsData);
+        const result = await sheetService.updateStatusAndComments(responseId, statusCommentsData);
         console.log(`✅ Status/comments updated successfully for entry ${entryId}:`, result);
         updatedCount++;
       }
       
       if (updatedCount > 0) {
-        console.log(`🎉 Status/comments updated for ${updatedCount} entries!`);
-        alert(`Status and comments updated successfully for ${updatedCount} entries!`);
+        console.log(`🎉 Status/comments/implementation date updated for ${updatedCount} entries!`);
+        alert(`Status, comments, and implementation date updated successfully for ${updatedCount} entries!`);
         await loadSheetData(); // Reload to show updated data
       } else {
-        alert('No status or comments to update. Please fill in some fields first.');
+        alert('No status, comments, or implementation date to update. Please fill in some fields first.');
       }
     } catch (err) {
       console.error('❌ Failed to update status/comments:', err);
@@ -527,7 +637,7 @@ const TeamSheetEditor = () => {
       });
       
       // Show more specific error message
-      let errorMessage = 'Failed to update status and comments';
+      let errorMessage = 'Failed to update status, comments, and implementation date';
       if (err.response?.data?.error) {
         errorMessage = err.response.data.error;
       } else if (err.message) {
@@ -535,7 +645,7 @@ const TeamSheetEditor = () => {
       }
       
       setError(errorMessage);
-      alert(`Failed to update status and comments: ${errorMessage}`);
+      alert(`Failed to update status, comments, and implementation date: ${errorMessage}`);
     }
   };
 
@@ -563,12 +673,27 @@ const TeamSheetEditor = () => {
 
   return (
     <div className="container-fluid p-4">
+      <style>
+        {`
+          @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(255, 193, 7, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(255, 193, 7, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(255, 193, 7, 0); }
+          }
+        `}
+      </style>
       <div className="row">
         <div className="col-12">
           <div className="d-flex justify-content-between align-items-center mb-4">
             <div>
               <h1 className="h3 mb-0">
                 Edit Team Sheet
+                {isUpdateMode && (
+                  <span className="ms-2 badge bg-info">
+                    <i className="fas fa-edit me-1"></i>
+                    Update Mode
+                  </span>
+                )}
                 {autoSaving && (
                   <span className="ms-2 small text-primary">
                     <i className="fas fa-spinner fa-spin"></i> Auto-saving...
@@ -622,10 +747,10 @@ const TeamSheetEditor = () => {
                 <button 
                   className="btn btn-outline-warning" 
                   onClick={handleUpdateStatusComments}
-                  title="Update status and comments (works even after submission)"
+                                              title="Update status, comments, and implementation date (works even after submission)"
                 >
-                  <i className="fas fa-edit me-1"></i>
-                  Update Status/Comments
+                                              <i className="fas fa-edit me-1"></i>
+                            Update Status/Comments/Date
                 </button>
               )}
               
@@ -650,7 +775,8 @@ const TeamSheetEditor = () => {
               Assignment Status: {sheet?.assignment_status || 'Unknown'} | 
               Sheet Status: {sheet?.status || 'Unknown'} | 
               Assigned At: {sheet?.assigned_at || 'Not set'} | 
-              Submitting: {submitting ? 'Yes' : 'No'}
+              Submitting: {submitting ? 'Yes' : 'No'} | 
+              Update Mode: {isUpdateMode ? 'Yes' : 'No'}
             </div>
           </div>
 
@@ -680,6 +806,13 @@ const TeamSheetEditor = () => {
             </div>
           )}
 
+          {isUpdateMode && (
+            <div className="alert alert-info" role="alert">
+              <i className="fas fa-edit me-2"></i>
+              <strong>Update Mode:</strong> You are viewing only the entries you previously edited. This allows you to focus on updating the status, comments, and implementation date for entries you've worked on.
+            </div>
+          )}
+
           {/* Help text for form behavior */}
           <div className="alert alert-info" role="alert">
             <i className="fas fa-info-circle me-2"></i>
@@ -693,7 +826,7 @@ const TeamSheetEditor = () => {
               <li>Date fields will only appear when their prerequisite conditions are met</li>
               <li>Use <strong>"Save Draft"</strong> to save your progress without submitting</li>
               {sheet.assignment_status === 'completed' && (
-                <li><strong>Status and Comments</strong> can be updated even after sheet submission using the "Update Status/Comments" button</li>
+                                        <li><strong>Status, Comments, and Implementation Date</strong> can be updated even after sheet submission using the "Update Status/Comments/Date" button</li>
               )}
             </ul>
           </div>
@@ -751,7 +884,16 @@ const TeamSheetEditor = () => {
                   </thead>
                   <tbody>
                     {getCurrentEntries().map((entry) => (
-                      <tr key={entry.id}>
+                      <tr 
+                        key={entry.id}
+                        id={`entry-${entry.original_entry_id || entry.id}`}
+                        className={highlightedEntryId === (entry.original_entry_id || entry.id) ? 'table-warning' : ''}
+                        style={highlightedEntryId === (entry.original_entry_id || entry.id) ? { 
+                          backgroundColor: '#fff3cd', 
+                          border: '2px solid #ffc107',
+                          animation: 'pulse 2s infinite'
+                        } : {}}
+                      >
                         {/* OEM/Vendor */}
                         <td style={{fontSize: '0.85rem'}}>
                           <strong>{entry.vendor_name || entry.oem_vendor || 'N/A'}</strong>
@@ -781,13 +923,13 @@ const TeamSheetEditor = () => {
                         {/* Risk Level */}
                         <td>
                           <span className={`badge ${
-                            entry.original_risk_level === 'Critical' ? 'bg-danger' :
-                            entry.original_risk_level === 'High' ? 'bg-warning text-dark' :
-                            entry.original_risk_level === 'Medium' ? 'bg-info' :
-                            entry.original_risk_level === 'Low' ? 'bg-success' :
+                            (entry.original_risk_level || entry.risk_level) === 'Critical' ? 'bg-danger' :
+                            (entry.original_risk_level || entry.risk_level) === 'High' ? 'bg-warning text-dark' :
+                            (entry.original_risk_level || entry.risk_level) === 'Medium' ? 'bg-info' :
+                            (entry.original_risk_level || entry.risk_level) === 'Low' ? 'bg-success' :
                             'bg-secondary'
                           }`} style={{fontSize: '0.75rem'}}>
-                            {entry.original_risk_level || 'N/A'}
+                            {entry.original_risk_level || entry.risk_level || 'N/A'}
                           </span>
                         </td>
                         
@@ -844,14 +986,21 @@ const TeamSheetEditor = () => {
                               {responses[entry.original_entry_id]?.deployed_in_ke === 'N' ? (
                                 <span className="text-muted small">N/A</span>
                               ) : ['In Progress', 'Completed', 'Blocked'].includes(responses[entry.original_entry_id]?.current_status) ? (
-                                <input
-                                  type="date"
-                                  className="form-control form-control-sm"
-                                  value={responses[entry.original_entry_id]?.implementation_date || ''}
-                                  onChange={(e) => handleResponseChange(entry.original_entry_id, 'implementation_date', e.target.value)}
-                                  disabled={sheet.assignment_status === 'completed'}
-                                  style={{fontSize: '0.75rem'}}
-                                />
+                                <div>
+                                  <input
+                                    type="date"
+                                    className={`form-control form-control-sm ${sheet.assignment_status === 'completed' ? 'border-warning' : ''}`}
+                                    value={responses[entry.original_entry_id]?.implementation_date || ''}
+                                    onChange={(e) => handleResponseChange(entry.original_entry_id, 'implementation_date', e.target.value)}
+                                    disabled={false} // Always allow implementation date updates
+                                    style={{fontSize: '0.75rem'}}
+                                  />
+                                  {sheet.assignment_status === 'completed' && (
+                                    <small className="text-warning d-block mt-1">
+                                      <i className="fas fa-edit"></i> Editable after submission
+                                    </small>
+                                  )}
+                                </div>
                               ) : (
                                 <span className="text-muted small">Date</span>
                               )}
@@ -984,7 +1133,16 @@ const TeamSheetEditor = () => {
                         
                         {/* Month/Year */}
                         <td style={{fontSize: '0.85rem'}}>
-                          <span className="text-muted">N/A</span>
+                          {sheet && sheet.month_year ? (
+                            <span className="text-info">
+                              {new Date(sheet.month_year).toLocaleDateString('en-US', { 
+                                month: 'short', 
+                                year: 'numeric' 
+                              })}
+                            </span>
+                          ) : (
+                            <span className="text-muted">N/A</span>
+                          )}
                         </td>
                       </tr>
                     ))}

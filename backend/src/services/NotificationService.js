@@ -28,6 +28,7 @@ class NotificationService {
     try {
       const notifications = await db('notifications')
         .where('user_id', userId)
+        .where('type', 'patching_reminder') // Only show patching reminder notifications to users
         .orderBy('created_at', 'desc')
         .limit(limit);
 
@@ -60,26 +61,30 @@ class NotificationService {
 
   static async markAsRead(notificationId, userId) {
     try {
+      // Delete the notification instead of just marking as read
+      // For users, only allow deleting patching_reminder notifications
       await db('notifications')
-        .where({ id: notificationId, user_id: userId })
-        .update({ read_at: db.fn.now() });
+        .where({ id: notificationId, user_id: userId, type: 'patching_reminder' })
+        .del();
 
-      console.log(`✅ Notification ${notificationId} marked as read`);
+      console.log(`✅ Notification ${notificationId} deleted (marked as read)`);
     } catch (error) {
-      console.error('❌ Error marking notification as read:', error);
+      console.error('❌ Error deleting notification:', error);
       throw error;
     }
   }
 
   static async markAllAsRead(userId) {
     try {
+      // Delete all unread notifications instead of just marking as read
+      // For users, only delete patching_reminder notifications
       await db('notifications')
-        .where({ user_id: userId, read_at: null })
-        .update({ read_at: db.fn.now() });
+        .where({ user_id: userId, read_at: null, type: 'patching_reminder' })
+        .del();
 
-      console.log(`✅ All notifications marked as read for user ${userId}`);
+      console.log(`✅ All unread patching reminder notifications deleted for user ${userId}`);
     } catch (error) {
-      console.error('❌ Error marking all notifications as read:', error);
+      console.error('❌ Error deleting all notifications:', error);
       throw error;
     }
   }
@@ -88,6 +93,7 @@ class NotificationService {
     try {
       const result = await db('notifications')
         .where({ user_id: userId, read_at: null })
+        .where('type', 'patching_reminder') // Only count patching reminder notifications for users
         .count('* as count')
         .first();
 

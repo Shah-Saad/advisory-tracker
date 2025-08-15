@@ -254,6 +254,11 @@ class SheetService {
       throw new Error('Team sheet assignment not found');
     }
 
+    // Get team and user info for notifications
+    const team = await db('teams').where('id', teamId).first();
+    const user = await db('users').where('id', userId).first();
+    const sheet = await db('sheets').where('id', sheetId).first();
+
     // Save each individual response to sheet_responses table
     console.log(`💾 Saving ${responsesArray.length} responses to database...`);
     for (const response of responsesArray) {
@@ -315,8 +320,6 @@ class SheetService {
         }
       });
 
-      console.log(`📝 Mapped response for entry ${entryId}:`, Object.keys(dbResponseData));
-
       // Check if response already exists
       const existingResponse = await db('sheet_responses')
         .where({
@@ -327,26 +330,18 @@ class SheetService {
 
       if (existingResponse) {
         // Update existing response
-        await db('sheet_responses')
+        const updatedResponse = await db('sheet_responses')
           .where('id', existingResponse.id)
           .update({
             ...dbResponseData,
             updated_by: userId,
             updated_at: db.fn.now()
-          });
-        console.log(`✅ Updated response for entry ${entryId}`);
-        
-        // Track the edit
-        try {
-          const EditedEntriesTrackingService = require('./EditedEntriesTrackingService');
-          await EditedEntriesTrackingService.trackEntryEdit(userId, sheetId, entryId, existingResponse.id);
-          console.log(`✅ Tracked edit for entry ${entryId}`);
-        } catch (trackingError) {
-          console.error('❌ Failed to track edit:', trackingError);
-        }
+          })
+          .returning('*');
+        console.log(`✅ Updated existing response for entry ${entryId}`);
       } else {
         // Create new response
-        const [newResponse] = await db('sheet_responses')
+        const newResponse = await db('sheet_responses')
           .insert({
             team_sheet_id: teamSheet.id,
             original_entry_id: entryId,
@@ -367,6 +362,51 @@ class SheetService {
           console.error('❌ Failed to track edit:', trackingError);
         }
       }
+
+      // Create notification for each specific entry submission
+      try {
+        // Get entry details for the notification
+        const entryDetails = await db('sheet_entries')
+          .where('id', entryId)
+          .select('product_name', 'cve', 'vendor')
+          .first();
+
+        if (entryDetails && team && user && sheet) {
+          // Get all admin users and create notifications for each
+          const admins = await db('users as u')
+            .join('roles as r', 'u.role_id', 'r.id')
+            .where('r.name', 'admin')
+            .select('u.id');
+
+          console.log(`📊 Found ${admins.length} admin users to notify for entry ${entryId}`);
+          
+          for (const admin of admins) {
+            console.log(`📝 Creating notification for admin ${admin.id} for entry ${entryId}...`);
+            await NotificationService.createNotification({
+              user_id: admin.id, // Use admin.id as user_id for admin notifications
+              type: 'entry_submitted',
+              title: `Entry Submitted: ${entryDetails.product_name || 'Product'}`,
+              message: `${user.username || user.email} from ${team.name} team has submitted entry "${entryDetails.product_name}" (CVE: ${entryDetails.cve || 'N/A'}) for sheet "${sheet.title}"`,
+              data: {
+                sheet_id: sheetId,
+                team_id: teamId,
+                team_name: team.name,
+                sheet_title: sheet.title,
+                submitted_by: user.username || user.email,
+                entry_id: entryId,
+                product_name: entryDetails.product_name,
+                cve: entryDetails.cve,
+                vendor: entryDetails.vendor,
+                action: 'entry_submitted'
+              }
+            });
+            console.log(`✅ Created notification for admin ${admin.id} for entry ${entryId}`);
+          }
+        }
+      } catch (notificationError) {
+        console.error(`❌ Failed to create notification for entry ${entryId}:`, notificationError);
+        // Don't fail the request if notification fails
+      }
     }
     console.log('✅ Saved team responses');
 
@@ -374,49 +414,6 @@ class SheetService {
     const SheetResponseService = require('./SheetResponseService');
     await SheetResponseService.markTeamSheetCompleted(sheetId, teamId, userId);
     console.log('✅ Marked sheet as completed and created notifications');
-
-    // Create additional notification for sheet submission
-    try {
-      console.log('🔔 Creating sheet submission notifications...');
-      const team = await db('teams').where('id', teamId).first();
-      const sheet = await db('sheets').where('id', sheetId).first();
-      const user = await db('users').where('id', userId).first();
-      
-      console.log('📊 Found data:', { team: team?.name, sheet: sheet?.title, user: user?.username });
-      
-      if (team && sheet && user) {
-        // Get all admin users and create notifications for each
-        const admins = await db('users as u')
-          .join('roles as r', 'u.role_id', 'r.id')
-          .where('r.name', 'admin')
-          .select('u.id');
-
-        console.log(`📊 Found ${admins.length} admin users to notify`);
-        for (const admin of admins) {
-          console.log(`📝 Creating notification for admin ${admin.id}...`);
-          await NotificationService.createNotification({
-            user_id: admin.id, // Use admin.id as user_id for admin notifications
-            type: 'sheet_submitted',
-            title: 'Sheet Submitted Successfully',
-            message: `${user.username || user.email} from ${team.name} team has submitted sheet "${sheet.title}" with ${responsesArray.length} responses`,
-            data: {
-              sheet_id: sheetId,
-              team_id: teamId,
-              team_name: team.name,
-              sheet_title: sheet.title,
-              submitted_by: user.username || user.email,
-              response_count: responsesArray.length,
-              action: 'sheet_submitted'
-            }
-          });
-          console.log(`✅ Created notification for admin ${admin.id}`);
-        }
-        console.log(`✅ Created sheet submission notifications for ${admins.length} admins`);
-      }
-    } catch (notificationError) {
-      console.error('❌ Failed to create sheet submission notification:', notificationError);
-      // Don't fail the request if notification fails
-    }
 
     return { message: 'Sheet submitted successfully' };
   }
@@ -866,7 +863,7 @@ class SheetService {
 
     // If no team responses exist yet, initialize them
     if (teamResponses.length === 0 && originalEntries.length > 0) {
-      console.log(`Initializing team responses for team ${team.name} (ID: ${teamId}) in sheet ${sheetId}`);
+              console.log(`Initializing team responses for team ${team.name} (ID: ${teamId}) in sheet ${sheetId}`);
       try {
         await SheetResponseService.initializeTeamSheetResponses(sheetId, [teamId], assignment.assigned_by);
         
@@ -917,13 +914,25 @@ class SheetService {
         const editedEntryIds = await EditedEntriesTrackingService.getTeamEditedEntryIds(teamId, sheetId);
         
         if (editedEntryIds.length > 0) {
-          // Filter entries to show only edited ones
+          // Filter to show only entries that this team has edited
           filteredEntries = teamEntries.filter(entry => 
             editedEntryIds.includes(entry.id)
           );
+          
+          console.log('🔍 Edited entry IDs from tracking:', editedEntryIds);
+          console.log('🔍 Filtered entries for team:', filteredEntries.map(e => e.id));
         } else {
           // Fallback to the old method if no tracking data exists
-          const editedEntryIdsFallback = teamResponses
+          // Get responses for entries assigned to this team to find edited entries
+          const teamResponsesForFiltering = await db('sheet_responses as sr')
+            .join('team_sheets as ts', 'sr.team_sheet_id', 'ts.id')
+            .where('ts.sheet_id', sheetId)
+            .where('ts.team_id', teamId)
+            .whereIn('sr.original_entry_id', teamEntries.map(e => e.id))
+            .select('sr.*')
+            .orderBy('sr.id');
+          
+          const editedEntryIdsFallback = teamResponsesForFiltering
             .filter(response => {
               // Consider an entry as edited if it has any non-null, non-empty values
               return response.current_status || 
@@ -939,10 +948,14 @@ class SheetService {
             })
             .map(response => response.original_entry_id);
           
-          // Filter entries to show only edited ones
+          console.log('🔍 Edited entry IDs from fallback method:', editedEntryIdsFallback);
+          
+          // Filter to show only entries that this team has edited
           filteredEntries = teamEntries.filter(entry => 
             editedEntryIdsFallback.includes(entry.id)
           );
+          
+          console.log('🔍 Filtered entries for team (fallback):', filteredEntries.map(e => e.id));
         }
       } catch (error) {
         console.error('Error filtering edited entries:', error);
@@ -951,9 +964,18 @@ class SheetService {
       }
     }
 
+    // Get responses for filtered entries
+    const responsesForFilteredEntries = await db('sheet_responses as sr')
+      .join('team_sheets as ts', 'sr.team_sheet_id', 'ts.id')
+      .where('ts.sheet_id', sheetId)
+      .where('ts.team_id', teamId)
+      .whereIn('sr.original_entry_id', filteredEntries.map(e => e.id))
+      .select('sr.*')
+      .orderBy('sr.id');
+
     // Merge response data into entries for better data access
     const entriesWithResponses = filteredEntries.map(entry => {
-      const response = teamResponses.find(r => r.original_entry_id === entry.id);
+      const response = responsesForFilteredEntries.find(r => r.original_entry_id === entry.id);
       if (response) {
         return {
           ...entry,

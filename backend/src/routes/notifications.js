@@ -2,6 +2,8 @@ const express = require('express');
 const router = express.Router();
 const NotificationService = require('../services/NotificationService');
 const { auth } = require('../middlewares/auth');
+const { checkImplementationDates } = require('../../scripts/implementation_reminder');
+const db = require('../config/db'); // Fixed import path
 
 /**
  * @route GET /api/notifications
@@ -13,8 +15,13 @@ router.get('/', auth, async (req, res) => {
         const page = parseInt(req.query.page) || 1;
         const limit = parseInt(req.query.limit) || 20;
 
-        // Get notifications for the user
-        const notifications = await NotificationService.getUserNotifications(req.user.id, limit);
+        // Get notifications based on user role
+        let notifications;
+        if (req.user.role === 'admin') {
+            notifications = await NotificationService.getAdminNotifications(req.user.id, limit);
+        } else {
+            notifications = await NotificationService.getUserNotifications(req.user.id, limit);
+        }
 
         res.json(notifications);
     } catch (error) {
@@ -33,7 +40,19 @@ router.get('/', auth, async (req, res) => {
  */
 router.get('/unread-count', auth, async (req, res) => {
     try {
-        const count = await NotificationService.getUnreadCount(req.user.id);
+        let count;
+        if (req.user.role === 'admin') {
+            // For admins, count all unread notifications
+            const result = await db('notifications')
+                .where({ admin_id: req.user.id, read_at: null })
+                .count('* as count')
+                .first();
+            count = parseInt(result.count);
+        } else {
+            // For users, only count patching reminder notifications
+            count = await NotificationService.getUnreadCount(req.user.id);
+        }
+        
         res.json({ count });
     } catch (error) {
         console.error('Error getting unread count:', error);
@@ -46,16 +65,25 @@ router.get('/unread-count', auth, async (req, res) => {
 
 /**
  * @route PUT /api/notifications/:id/read
- * @desc Mark a notification as read
+ * @desc Mark a notification as read (deletes it)
  * @access Private
  */
 router.put('/:id/read', auth, async (req, res) => {
     try {
         const { id } = req.params;
-        await NotificationService.markAsRead(id, req.user.id);
+        
+        if (req.user.role === 'admin') {
+            // For admins, delete any notification
+            await db('notifications')
+                .where({ id: id, admin_id: req.user.id })
+                .del();
+        } else {
+            // For users, only delete patching reminder notifications
+            await NotificationService.markAsRead(id, req.user.id);
+        }
         
         res.json({
-            message: 'Notification marked as read'
+            message: 'Notification marked as read and removed'
         });
     } catch (error) {
         console.error('Error marking notification as read:', error);
@@ -68,20 +96,59 @@ router.put('/:id/read', auth, async (req, res) => {
 
 /**
  * @route PUT /api/notifications/read-all
- * @desc Mark all notifications as read for the user
+ * @desc Mark all notifications as read for the user (deletes them)
  * @access Private
  */
 router.put('/read-all', auth, async (req, res) => {
     try {
-        await NotificationService.markAllAsRead(req.user.id);
+        if (req.user.role === 'admin') {
+            // For admins, delete all unread notifications
+            await db('notifications')
+                .where({ admin_id: req.user.id, read_at: null })
+                .del();
+        } else {
+            // For users, only delete patching reminder notifications
+            await NotificationService.markAllAsRead(req.user.id);
+        }
         
         res.json({
-            message: 'All notifications marked as read'
+            message: 'All notifications marked as read and removed'
         });
     } catch (error) {
         console.error('Error marking all notifications as read:', error);
         res.status(500).json({ 
             message: 'Failed to mark all notifications as read', 
+            error: error.message 
+        });
+    }
+});
+
+/**
+ * @route POST /api/notifications/check-patching-reminders
+ * @desc Check for patching reminders and create notifications if needed
+ * @access Private
+ */
+router.post('/check-patching-reminders', auth, async (req, res) => {
+    try {
+        console.log('🔍 Checking for patching reminders...');
+        
+        // Run the patching reminder check
+        await checkImplementationDates();
+        
+        // Get updated notifications for the user
+        const notifications = await NotificationService.getUserNotifications(req.user.id, 10);
+        const unreadCount = await NotificationService.getUnreadCount(req.user.id);
+        
+        res.json({
+            message: 'Patching reminders checked successfully',
+            notifications,
+            unreadCount,
+            checked: true
+        });
+    } catch (error) {
+        console.error('Error checking patching reminders:', error);
+        res.status(500).json({ 
+            message: 'Failed to check patching reminders', 
             error: error.message 
         });
     }

@@ -60,7 +60,7 @@ async function checkImplementationDates() {
       // Get all users in this team
       const teamUsers = await db('users')
         .where('team_id', teamId)
-        .select('id', 'username', 'email', 'role');
+        .select('id', 'username', 'email');
 
       // Send notifications to team members
       for (const user of teamUsers) {

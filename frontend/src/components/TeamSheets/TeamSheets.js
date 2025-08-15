@@ -233,10 +233,10 @@ const TeamSheets = ({ user }) => {
                             <button 
                               className="btn btn-outline-warning btn-sm"
                               onClick={() => handleUpdateStatusComments(sheet.id)}
-                              title="Update status and comments (works even after submission)"
+                              title="Update status, comments, and implementation date (works even after submission)"
                             >
-                              <i className="fas fa-edit me-1"></i>
-                              Update Status/Comments
+                                                          <i className="fas fa-edit me-1"></i>
+                            Update Status/Comments/Date
                             </button>
                           </>
                         )}

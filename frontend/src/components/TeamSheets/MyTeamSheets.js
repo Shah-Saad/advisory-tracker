@@ -43,7 +43,7 @@ const MyTeamSheets = ({ user }) => {
       navigate(`/team-sheets/${sheetId}/respond`);
       
       // Show a toast message to guide the user
-      toast.info('Navigate to the sheet editor to update status and comments. Use the "Update Status/Comments" button there.', {
+      toast.info('Navigate to the sheet editor to update status, comments, and implementation date. Use the "Update Status/Comments/Date" button there.', {
         autoClose: 5000
       });
       
@@ -224,10 +224,10 @@ const MyTeamSheets = ({ user }) => {
                           <button 
                             className="btn btn-outline-warning btn-sm"
                             onClick={() => handleUpdateStatusComments(sheet.id)}
-                            title="Update status and comments (works even after submission)"
+                            title="Update status, comments, and implementation date (works even after submission)"
                           >
                             <i className="fas fa-edit me-1"></i>
-                            Update Status/Comments
+                            Update Status/Comments/Date
                           </button>
                         )}
                       </div>
@@ -252,7 +252,7 @@ const MyTeamSheets = ({ user }) => {
             <li>Update the status of each entry as you work on patching vulnerabilities</li>
             <li>Add comments to track your progress and communicate with administrators</li>
             <li>Mark entries as completed when patches are applied</li>
-            <li>For completed sheets, use "Update Status/Comments" to modify status and comments even after submission</li>
+            <li>For completed sheets, use "Update Status/Comments/Date" to modify status, comments, and implementation date even after submission</li>
             <li>Your progress is automatically tracked and reported to administrators</li>
           </ul>
         </div>

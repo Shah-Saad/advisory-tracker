@@ -1,25 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import './NotificationPanel.css';
+import '../Admin/NotificationPanel.css';
 
-const NotificationPanel = () => {
+const UserNotificationPanel = () => {
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
   const [showPanel, setShowPanel] = useState(false);
   const [isDarkTheme, setIsDarkTheme] = useState(false);
-
-  // Debug: Log token and user info
-  useEffect(() => {
-    const token = localStorage.getItem('token');
-    const user = localStorage.getItem('user');
-    console.log('NotificationPanel Debug:');
-    console.log('Token exists:', !!token);
-    console.log('User:', user ? JSON.parse(user) : 'No user');
-    console.log('Token (first 50 chars):', token ? token.substring(0, 50) + '...' : 'No token');
-  }, []);
 
   useEffect(() => {
     checkPatchingReminders(); // Check for patching reminders on component mount
@@ -50,7 +39,6 @@ const NotificationPanel = () => {
       const response = await axios.get('http://localhost:3000/api/notifications', {
         headers: { Authorization: `Bearer ${token}` }
       });
-      console.log('Fetched notifications:', response.data);
       setNotifications(response.data);
       setError(null);
     } catch (error) {
@@ -67,7 +55,6 @@ const NotificationPanel = () => {
       const response = await axios.get('http://localhost:3000/api/notifications/unread-count', {
         headers: { Authorization: `Bearer ${token}` }
       });
-      console.log('Fetched unread count:', response.data);
       setUnreadCount(response.data.count || 0);
     } catch (error) {
       console.error('Error fetching unread count:', error);
@@ -77,7 +64,7 @@ const NotificationPanel = () => {
 
   const checkPatchingReminders = async (forceCheck = false) => {
     try {
-      // Check if we've already run the daily check today
+      // Check if we've already run the daily check today (unless force check)
       const today = new Date().toDateString();
       const lastCheckDate = localStorage.getItem('lastPatchingReminderCheck');
       
@@ -99,8 +86,8 @@ const NotificationPanel = () => {
         setNotifications(response.data.notifications);
         setUnreadCount(response.data.unreadCount);
         
+        // Mark that we've completed the daily check (only if not force check)
         if (!forceCheck) {
-          // Mark that we've completed the daily check
           localStorage.setItem('lastPatchingReminderCheck', today);
           console.log('✅ Daily patching reminder check completed and saved');
         } else {
@@ -195,50 +182,28 @@ const NotificationPanel = () => {
                 )}
               </h6>
               <div>
-                <button 
-                  className="btn btn-sm btn-link text-info p-0 me-2"
-                  onClick={async () => {
-                    console.log('🔄 Refresh button clicked');
-                    setRefreshing(true);
-                    try {
-                      console.log('🔍 Starting refresh process...');
-                      await checkPatchingReminders(true); // Force check patching reminders
-                      await fetchNotifications();
-                      await fetchUnreadCount();
-                      console.log('✅ Refresh completed successfully');
-                    } catch (error) {
-                      console.error('❌ Error during refresh:', error);
-                    } finally {
-                      setRefreshing(false);
-                    }
-                  }}
-                  title="Refresh notifications and check patching reminders"
-                  disabled={refreshing}
-                >
-                  <i className={`fas fa-sync-alt ${refreshing ? 'fa-spin' : ''}`}></i>
-                </button>
-                <button 
-                  className="btn btn-sm btn-link text-warning p-0 me-2"
-                  onClick={async () => {
-                    console.log('⚠️ Force check button clicked');
-                    setRefreshing(true);
-                    try {
-                      console.log('🔍 Force checking patching reminders...');
-                      await checkPatchingReminders(true); // Force check patching reminders
-                      await fetchNotifications();
-                      await fetchUnreadCount();
-                      console.log('✅ Force check completed successfully');
-                    } catch (error) {
-                      console.error('❌ Error during force check:', error);
-                    } finally {
-                      setRefreshing(false);
-                    }
-                  }}
-                  title="Force check patching reminders (bypass daily limit)"
-                  disabled={refreshing}
-                >
-                  <i className="fas fa-exclamation-triangle"></i>
-                </button>
+                                 <button 
+                   className="btn btn-sm btn-link text-info p-0 me-2"
+                   onClick={() => {
+                     checkPatchingReminders(); // Check for new patching reminders
+                     fetchNotifications();
+                     fetchUnreadCount();
+                   }}
+                   title="Refresh notifications and check patching reminders"
+                 >
+                   <i className="fas fa-sync-alt"></i>
+                 </button>
+                 <button 
+                   className="btn btn-sm btn-link text-warning p-0 me-2"
+                   onClick={() => {
+                     checkPatchingReminders(true); // Force check patching reminders
+                     fetchNotifications();
+                     fetchUnreadCount();
+                   }}
+                   title="Force check patching reminders (bypass daily limit)"
+                 >
+                   <i className="fas fa-exclamation-triangle"></i>
+                 </button>
                 {unreadCount > 0 && (
                   <button 
                     className="btn btn-sm btn-link text-primary p-0 me-2"
@@ -424,21 +389,14 @@ const NotificationPanel = () => {
                                 }`}
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  // Navigate to appropriate page based on notification type and user role
-                                  const user = JSON.parse(localStorage.getItem('user') || '{}');
-                                  const isAdmin = user.role === 'admin';
                                   
                                   if (notification.type === 'patching_reminder') {
                                     // For patching reminders, navigate with entry highlighting
-                                    const url = isAdmin 
-                                      ? `/admin/team-sheets/${notification.data.sheet_id}?highlight_entry=${notification.data.entry_id}`
-                                      : `/team-sheets/${notification.data.sheet_id}?highlight_entry=${notification.data.entry_id}`;
+                                    const url = `/team-sheets/${notification.data.sheet_id}?highlight_entry=${notification.data.entry_id}`;
                                     window.open(url, '_blank');
                                   } else {
                                     // For regular notifications, navigate normally
-                                    const url = isAdmin 
-                                      ? `/admin/team-sheets/${notification.data.sheet_id}`
-                                      : `/team-sheets/${notification.data.sheet_id}`;
+                                    const url = `/team-sheets/${notification.data.sheet_id}`;
                                     window.open(url, '_blank');
                                   }
                                 }}
@@ -497,4 +455,4 @@ const NotificationPanel = () => {
   );
 };
 
-export default NotificationPanel;
+export default UserNotificationPanel;

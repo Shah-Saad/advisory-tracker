@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import sheetService from '../../services/sheetService';
 import sseService from '../../services/sseService';
+import NotificationPanel from './NotificationPanel';
 
 const AdminTeamSheetView = () => {
   const { sheetId, teamKey } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const [teamData, setTeamData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -14,6 +16,7 @@ const AdminTeamSheetView = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [sseConnected, setSseConnected] = useState(false);
   const [unlocking, setUnlocking] = useState(false);
+  const [highlightedEntryId, setHighlightedEntryId] = useState(null);
   const intervalRef = useRef(null);
   const hasLoadedRef = useRef(false);
 
@@ -25,6 +28,22 @@ const AdminTeamSheetView = () => {
     searchTerm: ''
   });
   const [filteredResponses, setFilteredResponses] = useState([]);
+
+  // Handle URL parameters for entry highlighting
+  useEffect(() => {
+    const searchParams = new URLSearchParams(location.search);
+    const highlightEntryId = searchParams.get('highlight_entry');
+    if (highlightEntryId) {
+      setHighlightedEntryId(parseInt(highlightEntryId));
+      // Scroll to the highlighted entry after a short delay to ensure data is loaded
+      setTimeout(() => {
+        const element = document.getElementById(`entry-${highlightEntryId}`);
+        if (element) {
+          element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 1000);
+    }
+  }, [location.search]);
 
   const loadTeamSheetData = useCallback(async (showLoading = true) => {
     try {
@@ -247,6 +266,15 @@ const AdminTeamSheetView = () => {
 
   return (
     <div className="container-fluid p-4">
+      <style>
+        {`
+          @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(255, 193, 7, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(255, 193, 7, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(255, 193, 7, 0); }
+          }
+        `}
+      </style>
       <div className="row">
         <div className="col-12">
           <div className="d-flex justify-content-between align-items-center mb-4">
@@ -277,7 +305,8 @@ const AdminTeamSheetView = () => {
                 </span>
               </p>
             </div>
-            <div className="d-flex gap-2">
+            <div className="d-flex gap-2 align-items-center">
+              <NotificationPanel />
               <button 
                 className="btn btn-outline-secondary" 
                 onClick={() => navigate('/admin/team-sheets')}
@@ -527,7 +556,16 @@ const AdminTeamSheetView = () => {
                     </thead>
                     <tbody>
                         {filteredResponses.map((response, index) => (
-                        <tr key={response.id || index} className={`${getEntryStatusColor(response)} ${isRecentlyUpdated(response.updated_at) ? 'border-primary border-2' : ''}`}>
+                        <tr 
+                          key={response.id || index} 
+                          id={`entry-${response.original_entry_id || response.id}`}
+                          className={`${getEntryStatusColor(response)} ${isRecentlyUpdated(response.updated_at) ? 'border-primary border-2' : ''} ${highlightedEntryId === (response.original_entry_id || response.id) ? 'table-warning' : ''}`}
+                          style={highlightedEntryId === (response.original_entry_id || response.id) ? { 
+                            backgroundColor: '#fff3cd', 
+                            border: '2px solid #ffc107',
+                            animation: 'pulse 2s infinite'
+                          } : {}}
+                        >
                           <td>
                             <small>{response.product_name || 'N/A'}</small>
                             {isRecentlyUpdated(response.updated_at) && (
