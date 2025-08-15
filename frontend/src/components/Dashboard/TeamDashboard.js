@@ -24,6 +24,7 @@ const TeamDashboard = ({ user }) => {
       
       // Load team sheets
       const sheets = await sheetService.getMyTeamSheets();
+      // console.log('sheets', sheets); 
       setTeamSheets(sheets);
       
       // Calculate stats
@@ -213,7 +214,7 @@ const TeamDashboard = ({ user }) => {
                           <div className="card-body p-4">
                             <div className="d-flex justify-content-between align-items-start mb-3">
                               <h6 className="card-title fw-bold text-dark mb-0" style={{ fontSize: '1rem' }}>
-                                {sheet.sheet_title || 'Untitled Sheet'}
+                                {sheet.title || 'Untitled Sheet'}
                               </h6>
                               <span className={`badge ${getStatusBadge(sheet.assignment_status)}`}>
                                 {getStatusText(sheet.assignment_status)}
@@ -229,7 +230,7 @@ const TeamDashboard = ({ user }) => {
 
                             <div className="d-flex justify-content-between align-items-center">
                               <Link 
-                                to={`/team-sheets/${sheet.sheet_id}`} 
+                                to={`/team-sheets/${sheet.id}`} 
                                 className="btn btn-success btn-sm"
                               >
                                 <i className="fas fa-edit me-1"></i>

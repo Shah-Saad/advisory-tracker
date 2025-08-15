@@ -79,13 +79,20 @@ class EditedEntriesTrackingService {
     try {
       console.log(`🔍 Getting edited entry IDs for team ${teamId}, sheet ${sheetId}`);
       
+      // Get team name from team ID
+      const team = await db('teams').where('id', teamId).first();
+      if (!team) {
+        console.log(`❌ Team with ID ${teamId} not found`);
+        return [];
+      }
+      
       const trackingRecords = await db('edited_entries_tracking as eet')
         .join('users as u', 'eet.user_id', 'u.id')
         .join('sheet_entries as se', 'eet.entry_id', 'se.id')
         .where({
           'u.team_id': teamId,
-          'eet.sheet_id': sheetId,
-          'se.assigned_team': teamId  // Only include entries assigned to this team
+          'eet.sheet_id': sheetId
+          // Teams can edit any entry in the sheet, not just assigned ones
         })
         .select('eet.entry_id');
 

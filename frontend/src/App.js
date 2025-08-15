@@ -16,6 +16,7 @@ import Filters from './components/Filters/Filters';
 import AdminUserManagement from './components/Admin/AdminUserManagement';
 import TeamSheetSwitcher from './components/Admin/TeamSheetSwitcher';
 import AdminTeamSheetView from './components/Admin/AdminTeamSheetView';
+import AllEntriesView from './components/Admin/AllEntriesView';
 
 import NotificationPanel from './components/Admin/NotificationPanel';
 import TeamSheets from './components/TeamSheets/TeamSheets';
@@ -127,6 +128,12 @@ function App() {
                       Submissions Overview
                     </Link>
                   )}
+                  {user && user.role === 'admin' && (
+                    <Link className="nav-link text-white" to="/admin/all-entries">
+                      <i className="fas fa-list-alt me-1"></i>
+                      All Entries
+                    </Link>
+                  )}
                 </div>
                 
                 <div className="navbar-nav ms-auto">
@@ -229,6 +236,9 @@ function App() {
                   )}
                   {user && user.role === 'admin' && (
                     <Route path="/admin/team-sheets/:sheetId/:teamKey" element={<AdminTeamSheetView />} />
+                  )}
+                  {user && user.role === 'admin' && (
+                    <Route path="/admin/all-entries" element={<AllEntriesView />} />
                   )}
 
                   

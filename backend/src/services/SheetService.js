@@ -97,10 +97,26 @@ class SheetService {
         const SheetEntryService = require('./SheetEntryService');
         savedEntries = await SheetEntryService.saveSheetEntries(sheetRecord.id, processedFileData);
         console.log(`✅ Saved ${savedEntries.count} entries to database for sheet ${sheetRecord.id}`);
+        
+        // Verify entries were actually saved
+        const db = require('../config/db');
+        const actualEntryCount = await db('sheet_entries')
+          .where('sheet_id', sheetRecord.id)
+          .count('* as count');
+        
+        if (actualEntryCount[0].count === 0) {
+          console.warn('⚠️  Warning: No entries were saved to database despite processing file data');
+          console.warn('This might indicate an issue with the file format or column mapping');
+        } else {
+          console.log(`✅ Verified ${actualEntryCount[0].count} entries in database for sheet ${sheetRecord.id}`);
+        }
       } catch (entryError) {
         console.error('Error saving entries to database:', entryError.message);
-        // Don't fail the whole operation if entry saving fails
+        console.error('Entry error details:', entryError.stack);
+        // Don't fail the whole operation if entry saving fails, but log the error
       }
+    } else {
+      console.log('ℹ️  No file data to process or no rows found in uploaded file');
     }
 
     // Automatically distribute to all three teams (Generation, Distribution, Transmission)
@@ -363,50 +379,8 @@ class SheetService {
         }
       }
 
-      // Create notification for each specific entry submission
-      try {
-        // Get entry details for the notification
-        const entryDetails = await db('sheet_entries')
-          .where('id', entryId)
-          .select('product_name', 'cve', 'vendor')
-          .first();
-
-        if (entryDetails && team && user && sheet) {
-          // Get all admin users and create notifications for each
-          const admins = await db('users as u')
-            .join('roles as r', 'u.role_id', 'r.id')
-            .where('r.name', 'admin')
-            .select('u.id');
-
-          console.log(`📊 Found ${admins.length} admin users to notify for entry ${entryId}`);
-          
-          for (const admin of admins) {
-            console.log(`📝 Creating notification for admin ${admin.id} for entry ${entryId}...`);
-            await NotificationService.createNotification({
-              admin_id: admin.id, // Use admin_id for admin notifications
-              type: 'entry_submitted',
-              title: `Entry Submitted: ${entryDetails.product_name || 'Product'}`,
-              message: `${user.username || user.email} from ${team.name} team has submitted entry "${entryDetails.product_name}" (CVE: ${entryDetails.cve || 'N/A'}) for sheet "${sheet.title}"`,
-              data: {
-                sheet_id: sheetId,
-                team_id: teamId,
-                team_name: team.name,
-                sheet_title: sheet.title,
-                submitted_by: user.username || user.email,
-                entry_id: entryId,
-                product_name: entryDetails.product_name,
-                cve: entryDetails.cve,
-                vendor: entryDetails.vendor,
-                action: 'entry_submitted'
-              }
-            });
-            console.log(`✅ Created notification for admin ${admin.id} for entry ${entryId}`);
-          }
-        }
-      } catch (notificationError) {
-        console.error(`❌ Failed to create notification for entry ${entryId}:`, notificationError);
-        // Don't fail the request if notification fails
-      }
+      // Admin notifications for sheet submission have been removed
+      // Admins will only receive patching reminder notifications
     }
     console.log('✅ Saved team responses');
 
@@ -818,10 +792,9 @@ class SheetService {
       throw new Error('Team not found');
     }
 
-    // Get team-specific entries for this sheet
+    // Get all entries for this sheet (teams should see all entries)
     const teamEntries = await db('sheet_entries')
       .where('sheet_id', sheetId)
-      .where('assigned_team', teamId)
       .select('*')
       .orderBy('id');
 

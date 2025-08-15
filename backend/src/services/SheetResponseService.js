@@ -207,35 +207,8 @@ class SheetResponseService {
         )
         .first();
 
-      if (notificationData) {
-        const { sheet_name, sheet_title, team_name, completed_by_name } = notificationData;
-        console.log('📧 Creating notifications for sheet completion:', { sheet_title, team_name, completed_by_name });
-
-        // Get all admin users
-        const adminUsers = await db('users')
-          .join('roles', 'users.role_id', 'roles.id')
-          .where('roles.name', 'admin')
-          .select('users.id');
-        
-        console.log(`👥 Found ${adminUsers.length} admin users`);
-
-        // Create notification for each admin
-        for (const admin of adminUsers) {
-          await NotificationService.createNotification({
-            user_id: userId, // User who completed the sheet
-            admin_id: admin.id, // Admin who should receive the notification
-            type: 'team_sheet_completed',
-            title: 'Team Sheet Completed',
-            message: `${team_name} team has completed their work on sheet "${sheet_title || sheet_name}" (completed by ${completed_by_name})`,
-            data: {
-              sheet_id: sheetId,
-              team_id: teamId,
-              completed_by: userId
-            }
-          });
-          console.log(`✅ Created notification for admin ${admin.id}`);
-        }
-      }
+      // Admin notifications for sheet completion have been removed
+      // Admins will only receive patching reminder notifications
 
       return updatedAssignment[0];
     } catch (error) {

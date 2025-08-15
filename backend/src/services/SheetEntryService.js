@@ -239,11 +239,10 @@ class SheetEntryService {
           }
 
           // Ensure we have some minimal data before saving
-          if (entry.product_name || entry.vendor_name || entry.source) {
+          if (entry.product_name || entry.oem_vendor || entry.source) {
             console.log(`Entry ${index + 1} to be saved:`, {
               product_name: entry.product_name,
               oem_vendor: entry.oem_vendor,
-              vendor_name: entry.vendor_name,
               source: entry.source
             });
             entries.push(entry);

@@ -312,30 +312,8 @@ router.put('/responses/:responseId/status-comments', auth, async (req, res) => {
                       )
                       .first();
 
-                    if (responseWithDetails) {
-                      // Create notification for all admin users
-                      const adminUsers = await db('users as u')
-                        .join('roles as r', 'u.role_id', 'r.id')
-                        .where('r.name', 'admin')
-                        .select('u.id');
-
-                      for (const adminUser of adminUsers) {
-                        await NotificationService.createNotification({
-                          admin_id: adminUser.id,
-                          type: 'team_status_comments_updated',
-                          title: 'Status/Comments Updated',
-                          message: `${responseWithDetails.updated_by_name} from ${responseWithDetails.team_name} updated status/comments in sheet "${responseWithDetails.sheet_title}"`,
-                          data: {
-                            response_id: responseId,
-                            team_id: teamId,
-                            team_name: responseWithDetails.team_name,
-                            sheet_id: response.sheet_id,
-                            action: 'status_comments_updated',
-                            updated_fields: Object.keys(filteredUpdateData).filter(key => !['updated_by', 'updated_at'].includes(key))
-                          }
-                        });
-                      }
-                    }
+                    // Admin notifications for status/comments updates have been removed
+                    // Admins will only receive patching reminder notifications
                   } catch (notificationError) {
                     console.error('Failed to create status/comments notification:', notificationError);
                     // Don't fail the request if notification fails

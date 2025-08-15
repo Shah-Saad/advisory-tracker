@@ -6,6 +6,8 @@ const UserManagementService = require('../services/UserManagementService');
 const SheetEntryService = require('../services/SheetEntryService');
 const TeamService = require('../services/TeamService');
 const CISAService = require('../services/CISAService');
+const { requirePermission } = require('../middlewares/rbac');
+const db = require('../config/db');
 
 // Middleware to ensure only admins can access these routes
 router.use(requireAuth);
@@ -434,6 +436,111 @@ router.get('/team-sheets/:id/:teamKey', async (req, res) => {
   } catch (error) {
     console.error('❌ Error in admin team sheet route:', error);
     res.status(500).json({ error: 'Failed to load team sheet data' });
+  }
+});
+
+// Get all entries from all teams across all sheets
+router.get('/all-entries', requirePermission('read_sheets'), async (req, res) => {
+  try {
+    console.log('🔍 Fetching all entries for admin view...');
+
+    // Get all entries with sheet information
+    const entries = await db('sheet_entries as se')
+      .leftJoin('sheets as s', 'se.sheet_id', 's.id')
+      .select([
+        'se.id',
+        'se.product_name',
+        'se.oem_vendor',
+        'se.risk_level',
+        'se.cve',
+        'se.deployed_in_ke',
+        'se.source',
+        'se.created_at',
+        'se.updated_at',
+        'se.sheet_id',
+        's.title as sheet_title',
+        's.month_year as sheet_month_year'
+      ])
+      .orderBy('se.id', 'desc');
+
+    // Get team assignments for each sheet
+    const teamAssignments = await db('team_sheets as ts')
+      .join('teams as t', 'ts.team_id', 't.id')
+      .select([
+        'ts.sheet_id',
+        't.name as team_name',
+        't.id as team_id'
+      ]);
+
+    // Get sheet responses
+    const sheetResponses = await db('sheet_responses as sr')
+      .join('team_sheets as ts', 'sr.team_sheet_id', 'ts.id')
+      .select([
+        'sr.team_sheet_id',
+        'sr.status',
+        'sr.comments',
+        'sr.implementation_date'
+      ]);
+
+    // Create a map for quick lookups
+    const teamMap = new Map();
+    teamAssignments.forEach(ta => {
+      if (!teamMap.has(ta.sheet_id)) {
+        teamMap.set(ta.sheet_id, []);
+      }
+      teamMap.get(ta.sheet_id).push(ta);
+    });
+
+    const responseMap = new Map();
+    sheetResponses.forEach(sr => {
+      responseMap.set(sr.team_sheet_id, sr);
+    });
+
+    console.log(`✅ Found ${entries.length} entries`);
+
+    // Process entries to ensure consistent data structure
+    const processedEntries = entries.map(entry => {
+      // Get teams assigned to this sheet
+      const teams = teamMap.get(entry.sheet_id) || [];
+      const primaryTeam = teams[0]; // Use first team as primary
+      
+      // Get response data for this entry (simplified approach)
+      const responseData = teams.length > 0 ? responseMap.get(teams[0].team_id) : null;
+      
+      return {
+        id: entry.id,
+        product_name: entry.product_name,
+        oem_vendor: entry.oem_vendor,
+        risk_level: entry.risk_level,
+        cve: entry.cve,
+        deployed_in_ke: entry.deployed_in_ke || 'N',
+        source: entry.source,
+        created_at: entry.created_at,
+        updated_at: entry.updated_at,
+        sheet_id: entry.sheet_id,
+        sheet_title: entry.sheet_title,
+        sheet_month_year: entry.sheet_month_year,
+        team_name: primaryTeam ? primaryTeam.team_name : 'Unassigned',
+        team_id: primaryTeam ? primaryTeam.team_id : null,
+        status: responseData ? responseData.status : 'pending',
+        comments: responseData ? responseData.comments : null,
+        implementation_date: responseData ? responseData.implementation_date : null
+      };
+    });
+
+    res.json({
+      success: true,
+      entries: processedEntries,
+      count: processedEntries.length
+    });
+
+  } catch (error) {
+    console.error('❌ Error fetching all entries:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch entries',
+      error: error.message
+    });
   }
 });
 
