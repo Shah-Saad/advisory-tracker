@@ -46,9 +46,13 @@ const sheetService = {
   // Get all entries
   getAllEntries: async () => {
     try {
+      console.log('🔄 sheetService: Making API call to /sheet-entries...');
       const response = await apiClient.get('/sheet-entries');
+      console.log('✅ sheetService: API call successful, received:', response.data.length, 'entries');
+      console.log('📊 sheetService: Sample data:', response.data.slice(0, 2));
       return response.data;
     } catch (error) {
+      console.error('❌ sheetService: API call failed:', error);
       throw error.response?.data || { message: 'Failed to fetch entries' };
     }
   },
@@ -66,7 +70,15 @@ const sheetService = {
   // Filter entries
   filterEntries: async (filters) => {
     try {
-      const response = await apiClient.post('/sheet-entries/filter', { filters });
+      // Convert filters object to query parameters for GET request
+      const queryParams = new URLSearchParams();
+      Object.entries(filters).forEach(([key, value]) => {
+        if (value !== undefined && value !== null && value !== '') {
+          queryParams.append(key, value);
+        }
+      });
+      
+      const response = await apiClient.get(`/sheet-entries/filter?${queryParams.toString()}`);
       return response.data;
     } catch (error) {
       throw error.response?.data || { message: 'Failed to filter entries' };

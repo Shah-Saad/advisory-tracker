@@ -283,8 +283,8 @@ const Filters = () => {
                             )}
                           </td>
                           <td>
-                            <span className={`badge ${entry.deployed_in_ke === 'Yes' ? 'bg-success' : entry.deployed_in_ke === 'No' ? 'bg-danger' : 'bg-secondary'}`}>
-                              {entry.deployed_in_ke || 'Unknown'}
+                            <span className={`badge ${entry.deployed_in_ke === 'Yes' || entry.deployed_in_ke === 'Y' ? 'bg-success' : entry.deployed_in_ke === 'No' || entry.deployed_in_ke === 'N' ? 'bg-danger' : 'bg-secondary'}`}>
+                              {entry.deployed_in_ke === 'Y' ? 'Yes' : entry.deployed_in_ke === 'N' ? 'No' : entry.deployed_in_ke || 'Unknown'}
                             </span>
                           </td>
                           <td>

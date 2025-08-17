@@ -550,20 +550,72 @@ class SheetEntryService {
     }
   }
   
-  // Get all entries from all sheets
+  // Get all entries from all sheets with merged response data
   static async getAllEntries() {
     try {
-      const entries = await db('sheet_entries')
-        .join('sheets', 'sheet_entries.sheet_id', 'sheets.id')
+      // First get all entries with sheet information
+      const entries = await db('sheet_entries as se')
+        .join('sheets as s', 'se.sheet_id', 's.id')
         .select(
-          'sheet_entries.*',
-          'sheets.title as sheet_title',
-          'sheets.month_year as sheet_month',
-          'sheets.file_name as sheet_file'
+          'se.*',
+          's.title as sheet_title',
+          's.month_year as sheet_month',
+          's.file_name as sheet_file'
         )
-        .orderBy(['sheets.month_year', 'sheet_entries.id']);
+        .orderBy(['s.month_year', 'se.id']);
       
-      return entries;
+      // Now merge with response data to get current status
+      const entriesWithResponses = await Promise.all(
+        entries.map(async (entry) => {
+          try {
+            // Get the most recent response for this entry from any team
+            const latestResponse = await db('sheet_responses as sr')
+              .join('team_sheets as ts', 'sr.team_sheet_id', 'ts.id')
+              .join('teams as t', 'ts.team_id', 't.id')
+              .where('sr.original_entry_id', entry.id)
+              .select(
+                'sr.deployed_in_ke',
+                'sr.current_status',
+                'sr.comments',
+                'sr.vendor_contacted',
+                'sr.compensatory_controls_provided',
+                'sr.estimated_time',
+                'sr.site',
+                'sr.updated_at as response_updated_at',
+                'ts.team_id',
+                't.name as team_name'
+              )
+              .orderBy('sr.updated_at', 'desc')
+              .first();
+            
+            // Merge response data with entry data
+            if (latestResponse) {
+              return {
+                ...entry,
+                // Use response data if available, otherwise use original entry data
+                deployed_in_ke: latestResponse.deployed_in_ke || entry.deployed_in_ke,
+                current_status: latestResponse.current_status || entry.current_status,
+                status: latestResponse.current_status || entry.current_status, // Add status field for frontend compatibility
+                comments: latestResponse.comments || entry.comments,
+                vendor_contacted: latestResponse.vendor_contacted || entry.vendor_contacted,
+                compensatory_controls_provided: latestResponse.compensatory_controls_provided || entry.compensatory_controls_provided,
+                estimated_time: latestResponse.estimated_time || entry.estimated_time,
+                site: latestResponse.site || entry.site,
+                response_updated_at: latestResponse.response_updated_at,
+                responding_team_id: latestResponse.team_id,
+                team_name: latestResponse.team_name // Add team name
+              };
+            }
+            
+            return entry;
+          } catch (error) {
+            console.error(`Error merging response data for entry ${entry.id}:`, error);
+            return entry;
+          }
+        })
+      );
+      
+      return entriesWithResponses;
     } catch (error) {
       throw new Error(`Failed to get all entries: ${error.message}`);
     }
@@ -594,53 +646,70 @@ class SheetEntryService {
     }
   }
   
-  // Filter entries by criteria
+  // Filter entries by criteria with merged response data
   static async filterEntries(filters = {}) {
     try {
-      let query = db('sheet_entries')
-        .join('sheets', 'sheet_entries.sheet_id', 'sheets.id')
-        .select(
-          'sheet_entries.*',
-          'sheets.title as sheet_title',
-          'sheets.month_year as sheet_month',
-          'sheets.file_name as sheet_file'
-        );
+      // First get all entries with merged response data
+      const allEntries = await this.getAllEntries();
       
-      // Apply filters
-      Object.keys(filters).forEach(key => {
-        if (filters[key] !== undefined && filters[key] !== null && filters[key] !== '') {
-          if (key === 'month' || key === 'year') {
-            // Handle month/year filtering using the sheets.month_year date column
+      // Apply filters to the merged data
+      let filteredEntries = allEntries.filter(entry => {
+        for (const [key, value] of Object.entries(filters)) {
+          if (value !== undefined && value !== null && value !== '') {
             if (key === 'month') {
-              const monthNumber = this.getMonthNumber(filters[key]);
+              const monthNumber = this.getMonthNumber(value);
               if (monthNumber) {
-                query = query.whereRaw('EXTRACT(MONTH FROM sheets.month_year) = ?', [monthNumber]);
+                const entryMonth = new Date(entry.sheet_month).getMonth() + 1;
+                if (entryMonth !== monthNumber) return false;
               }
             } else if (key === 'year') {
-              query = query.whereRaw('EXTRACT(YEAR FROM sheets.month_year) = ?', [parseInt(filters[key])]);
-            }
-          } else if (key === 'sheet_id' || key === 'sheet_title') {
-            // Handle sheet-level filters
-            query = query.where(`sheets.${key.replace('sheet_', '')}`, filters[key]);
-          } else {
-            // Handle entry-level filters - check if column exists
-            const entryLevelColumns = [
-              'id', 'product_name', 'location', 'status', 'deployed_in_ke', 'team', 'date', 'notes',
-              'oem_vendor', 'source', 'risk_level', 'cve', 'vendor_contacted', 
-              'compensatory_controls_provided', 'patching', 'current_status', 'priority_level',
-              'assigned_team'
-            ];
-            
-            if (entryLevelColumns.includes(key)) {
-              query = query.where(`sheet_entries.${key}`, filters[key]);
+              const entryYear = new Date(entry.sheet_month).getFullYear();
+              if (entryYear !== parseInt(value)) return false;
+            } else if (key === 'sheet_id') {
+              if (entry.sheet_id !== parseInt(value)) return false;
+            } else if (key === 'sheet_title') {
+              if (!entry.sheet_title.toLowerCase().includes(value.toLowerCase())) return false;
+            } else if (key === 'deployed_in_ke') {
+              // Handle both "Y"/"N" and "Yes"/"No" formats for deployed_in_ke filter
+              const filterValue = value.toUpperCase();
+              const entryValue = entry.deployed_in_ke ? entry.deployed_in_ke.toUpperCase() : '';
+              
+              // Map filter values to possible entry values
+              if (filterValue === 'Y' || filterValue === 'YES') {
+                if (entryValue !== 'Y' && entryValue !== 'YES') return false;
+              } else if (filterValue === 'N' || filterValue === 'NO') {
+                if (entryValue !== 'N' && entryValue !== 'NO') return false;
+              } else {
+                // For any other filter value, do exact match
+                if (entryValue !== filterValue) return false;
+              }
+            } else if (key === 'status' || key === 'current_status') {
+              if (entry.current_status !== value) return false;
+            } else if (key === 'team' || key === 'assigned_team') {
+              if (entry.assigned_team !== value) return false;
+            } else if (key === 'location') {
+              if (!entry.location?.toLowerCase().includes(value.toLowerCase())) return false;
+            } else if (key === 'product_name') {
+              if (!entry.product_name?.toLowerCase().includes(value.toLowerCase())) return false;
+            } else if (key === 'vendor' || key === 'vendor_name' || key === 'oem_vendor') {
+              if (!entry.oem_vendor?.toLowerCase().includes(value.toLowerCase())) return false;
+            } else if (key === 'risk_level') {
+              if (entry.risk_level !== value) return false;
+            } else if (key === 'cve') {
+              if (!entry.cve?.toLowerCase().includes(value.toLowerCase())) return false;
+            } else if (key === 'vendor_contacted') {
+              if (entry.vendor_contacted !== value) return false;
+            } else if (key === 'compensatory_controls_provided') {
+              if (entry.compensatory_controls_provided !== value) return false;
+            } else if (key === 'site') {
+              if (!entry.site?.toLowerCase().includes(value.toLowerCase())) return false;
             }
           }
         }
+        return true;
       });
       
-      const entries = await query.orderBy(['sheets.month_year', 'sheet_entries.id']);
-      
-      return entries;
+      return filteredEntries;
     } catch (error) {
       throw new Error(`Failed to filter entries: ${error.message}`);
     }

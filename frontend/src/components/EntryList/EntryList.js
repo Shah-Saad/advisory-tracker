@@ -94,10 +94,14 @@ const EntryList = () => {
 
   const loadEntries = async () => {
     try {
+      console.log('🔄 EntryList: Starting to load entries...');
       setLoading(true);
       const data = await sheetService.getAllEntries();
+      console.log('✅ EntryList: Successfully loaded entries:', data.length, 'entries');
+      console.log('📊 EntryList: Sample entries:', data.slice(0, 3));
       setEntries(data);
     } catch (error) {
+      console.error('❌ EntryList: Failed to load entries:', error);
       setError(error.message || 'Failed to load entries');
     } finally {
       setLoading(false);
@@ -153,7 +157,7 @@ const EntryList = () => {
     // Initialize conditional field visibility
     setShowSiteField(prev => ({
       ...prev,
-      [entry.id]: entry.deployed_in_ke === 'Yes'
+                                          [entry.id]: entry.deployed_in_ke === 'Yes' || entry.deployed_in_ke === 'Y'
     }));
     setShowDateField(prev => ({
       ...prev,
@@ -947,10 +951,10 @@ const EntryList = () => {
                                 </div>
                               ) : (
                                 <div>
-                                  <span className={`badge ${entry.deployed_in_ke === 'Yes' ? 'bg-success' : entry.deployed_in_ke === 'No' ? 'bg-danger' : 'bg-secondary'}`}>
-                                    {entry.deployed_in_ke || 'Unknown'}
-                                  </span>
-                                  {entry.deployed_in_ke === 'Yes' && entry.site && (
+                                                              <span className={`badge ${entry.deployed_in_ke === 'Yes' || entry.deployed_in_ke === 'Y' ? 'bg-success' : entry.deployed_in_ke === 'No' || entry.deployed_in_ke === 'N' ? 'bg-danger' : 'bg-secondary'}`}>
+                              {entry.deployed_in_ke === 'Y' ? 'Yes' : entry.deployed_in_ke === 'N' ? 'No' : entry.deployed_in_ke || 'Unknown'}
+                            </span>
+                                                                      {(entry.deployed_in_ke === 'Yes' || entry.deployed_in_ke === 'Y') && entry.site && (
                                     <div><small className="text-muted">Site: {entry.site}</small></div>
                                   )}
                                 </div>
@@ -963,12 +967,12 @@ const EntryList = () => {
                                     className="form-select form-select-sm mb-2"
                                     value={editForm.patching_est_release_option}
                                     onChange={(e) => handleEditFormChange('patching_est_release_option', e.target.value)}
-                                    disabled={editForm.deployed_in_ke === 'No'}
+                                    disabled={editForm.deployed_in_ke === 'No' || editForm.deployed_in_ke === 'N'}
                                   >
                                     <option value="Not Applicable">Not Applicable</option>
                                     <option value="Date">Date</option>
                                   </select>
-                                  {editForm.patching_est_release_option === 'Date' && editForm.deployed_in_ke !== 'No' && (
+                                  {editForm.patching_est_release_option === 'Date' && editForm.deployed_in_ke !== 'No' && editForm.deployed_in_ke !== 'N' && (
                                     <input
                                       type="date"
                                       className="form-control form-control-sm"
@@ -978,7 +982,7 @@ const EntryList = () => {
                                   )}
                                 </div>
                               ) : (
-                                entry.deployed_in_ke === 'No' ? 'N/A' : (entry.patching_est_release_date || 'Not Applicable')
+                                (entry.deployed_in_ke === 'No' || entry.deployed_in_ke === 'N') ? 'N/A' : (entry.patching_est_release_date || 'Not Applicable')
                               )}
                             </td>
                             <td>
@@ -988,12 +992,12 @@ const EntryList = () => {
                                     className="form-select form-select-sm mb-2"
                                     value={editForm.implementation_date_option}
                                     onChange={(e) => handleEditFormChange('implementation_date_option', e.target.value)}
-                                    disabled={editForm.deployed_in_ke === 'No'}
+                                    disabled={editForm.deployed_in_ke === 'No' || editForm.deployed_in_ke === 'N'}
                                   >
                                     <option value="Not Applicable">Not Applicable</option>
                                     <option value="Date">Date</option>
                                   </select>
-                                  {editForm.implementation_date_option === 'Date' && editForm.deployed_in_ke !== 'No' && (
+                                  {editForm.implementation_date_option === 'Date' && editForm.deployed_in_ke !== 'No' && editForm.deployed_in_ke !== 'N' && (
                                     <input
                                       type="date"
                                       className="form-control form-control-sm"
@@ -1003,7 +1007,7 @@ const EntryList = () => {
                                   )}
                                 </div>
                               ) : (
-                                entry.deployed_in_ke === 'No' ? 'N/A' : (entry.implementation_date || 'Not Applicable')
+                                (entry.deployed_in_ke === 'No' || entry.deployed_in_ke === 'N') ? 'N/A' : (entry.implementation_date || 'Not Applicable')
                               )}
                             </td>
                             <td>
@@ -1013,13 +1017,13 @@ const EntryList = () => {
                                     className="form-select form-select-sm mb-2"
                                     value={editForm.vendor_contacted}
                                     onChange={(e) => handleEditFormChange('vendor_contacted', e.target.value)}
-                                    disabled={editForm.deployed_in_ke === 'No'}
+                                    disabled={editForm.deployed_in_ke === 'No' || editForm.deployed_in_ke === 'N'}
                                   >
                                     <option value="">Select</option>
                                     <option value="Yes">Yes</option>
                                     <option value="No">No</option>
                                   </select>
-                                  {showDateField[entry.id] && editForm.deployed_in_ke !== 'No' && (
+                                  {showDateField[entry.id] && editForm.deployed_in_ke !== 'No' && editForm.deployed_in_ke !== 'N' && (
                                     <input
                                       type="date"
                                       className="form-control form-control-sm"
@@ -1029,7 +1033,7 @@ const EntryList = () => {
                                   )}
                                 </div>
                               ) : (
-                                entry.deployed_in_ke === 'No' ? (
+                                (entry.deployed_in_ke === 'No' || entry.deployed_in_ke === 'N') ? (
                                   <span className="text-muted">N/A</span>
                                 ) : (
                                   <div>
@@ -1050,13 +1054,13 @@ const EntryList = () => {
                                     className="form-select form-select-sm mb-2"
                                     value={editForm.compensatory_controls_provided}
                                     onChange={(e) => handleEditFormChange('compensatory_controls_provided', e.target.value)}
-                                    disabled={editForm.deployed_in_ke === 'No'}
+                                    disabled={editForm.deployed_in_ke === 'No' || editForm.deployed_in_ke === 'N'}
                                   >
                                     <option value="">Select</option>
                                     <option value="Yes">Yes</option>
                                     <option value="No">No</option>
                                   </select>
-                                  {showEstTimeField[entry.id] && editForm.deployed_in_ke !== 'No' && (
+                                  {showEstTimeField[entry.id] && editForm.deployed_in_ke !== 'No' && editForm.deployed_in_ke !== 'N' && (
                                     <div>
                                       <select
                                         className="form-select form-select-sm mb-2"
@@ -1410,12 +1414,12 @@ const EntryList = () => {
                       <div className="mb-3">
                         <label className="form-label fw-bold">Deployed in KE:</label>
                         <p className="mb-1">
-                          <span className={`badge ${
-                            viewingEntry.deployed_in_ke === 'Yes' ? 'bg-success' :
-                            viewingEntry.deployed_in_ke === 'No' ? 'bg-danger' : 'bg-secondary'
-                          }`}>
-                            {viewingEntry.deployed_in_ke || 'Unknown'}
-                          </span>
+                                                        <span className={`badge ${
+                                viewingEntry.deployed_in_ke === 'Yes' || viewingEntry.deployed_in_ke === 'Y' ? 'bg-success' :
+                                viewingEntry.deployed_in_ke === 'No' || viewingEntry.deployed_in_ke === 'N' ? 'bg-danger' : 'bg-secondary'
+                              }`}>
+                                {viewingEntry.deployed_in_ke === 'Y' ? 'Yes' : viewingEntry.deployed_in_ke === 'N' ? 'No' : viewingEntry.deployed_in_ke || 'Unknown'}
+                              </span>
                         </p>
                       </div>
                       <div className="mb-3">

@@ -32,18 +32,14 @@ const AllEntriesView = () => {
     try {
       setLoading(true);
       const token = localStorage.getItem('token');
-      const response = await axios.get('/api/admin/all-entries', {
+      const response = await axios.get('/api/sheet-entries', {
         headers: {
           'Authorization': `Bearer ${token}`
         }
       });
 
-      if (response.data.success) {
-        setEntries(response.data.entries);
-        calculateStats(response.data.entries);
-      } else {
-        setError('Failed to fetch entries');
-      }
+      setEntries(response.data);
+      calculateStats(response.data);
     } catch (error) {
       console.error('Error fetching entries:', error);
       setError('Error loading entries. Please try again.');
@@ -57,9 +53,9 @@ const AllEntriesView = () => {
       total: entriesData.length,
       deployed: entriesData.filter(entry => entry.deployed_in_ke === 'Y').length,
       notDeployed: entriesData.filter(entry => entry.deployed_in_ke === 'N').length,
-      completed: entriesData.filter(entry => entry.status === 'completed').length,
-      inProgress: entriesData.filter(entry => entry.status === 'in_progress').length,
-      pending: entriesData.filter(entry => entry.status === 'pending').length
+      completed: entriesData.filter(entry => entry.status === 'Completed').length,
+      inProgress: entriesData.filter(entry => entry.status === 'In Progress').length,
+      pending: entriesData.filter(entry => entry.status === 'New').length
     };
     setStats(stats);
   };
@@ -99,9 +95,10 @@ const AllEntriesView = () => {
 
   const getStatusColor = (status) => {
     switch (status) {
-      case 'completed': return 'success';
-      case 'in_progress': return 'warning';
-      case 'pending': return 'secondary';
+      case 'Completed': return 'success';
+      case 'In Progress': return 'warning';
+      case 'New': return 'info';
+      case 'Blocked': return 'danger';
       default: return 'secondary';
     }
   };
@@ -256,9 +253,10 @@ const AllEntriesView = () => {
               onChange={(e) => handleFilterChange('status', e.target.value)}
             >
               <option value="all">All Statuses</option>
-              <option value="completed">Completed</option>
-              <option value="in_progress">In Progress</option>
-              <option value="pending">Pending</option>
+              <option value="Completed">Completed</option>
+              <option value="In Progress">In Progress</option>
+              <option value="New">New</option>
+              <option value="Blocked">Blocked</option>
             </select>
           </div>
           <div className="filter-group">

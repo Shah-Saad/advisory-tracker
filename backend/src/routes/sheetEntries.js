@@ -185,7 +185,29 @@ router.get('/filter', auth, async (req, res) => {
             filters.vendor_name = req.query.vendor_name;
         }
 
-        
+        if (req.query.vendor) {
+            filters.vendor = req.query.vendor;
+        }
+
+        if (req.query.source) {
+            filters.source = req.query.source;
+        }
+
+        if (req.query.cve) {
+            filters.cve = req.query.cve;
+        }
+
+        if (req.query.risk_level) {
+            filters.risk_level = req.query.risk_level;
+        }
+
+        if (req.query.month) {
+            filters.month = req.query.month;
+        }
+
+        if (req.query.year) {
+            filters.year = req.query.year;
+        }
 
         if (req.query.vendor_id) {
             filters.vendor_id = req.query.vendor_id;
@@ -195,7 +217,9 @@ router.get('/filter', auth, async (req, res) => {
             filters.product_id = req.query.product_id;
         }
         
+        console.log('🔍 Applying filters:', filters);
         const entries = await SheetEntryService.filterEntries(filters);
+        console.log(`✅ Filter returned ${entries.length} entries`);
         
         res.json(entries);
     } catch (error) {
